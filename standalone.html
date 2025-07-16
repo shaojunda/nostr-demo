@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nostr Demo - 独立版本</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .section {
+            background: white;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .status {
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 6px;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #b8daff;
+        }
+        
+        .user-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .user-info strong {
+            color: #667eea;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e1e1e1;
+        }
+        
+        .tab {
+            background: none;
+            border: none;
+            padding: 15px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            color: #667eea;
+            background: #f8f9fa;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .article-item {
+            border: 1px solid #e1e1e1;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #fafafa;
+        }
+        
+        .article-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .article-content {
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.7;
+        }
+        
+        .article-meta {
+            font-size: 0.9em;
+            color: #999;
+            margin-bottom: 15px;
+        }
+        
+        .article-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .article-actions button {
+            background: #6c757d;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        
+        .article-actions button.active {
+            background: #667eea;
+        }
+        
+        .relay-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            border: 1px solid #e1e1e1;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        
+        .relay-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .relay-status.connected {
+            background: #28a745;
+        }
+        
+        .relay-status.disconnected {
+            background: #dc3545;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .cdn-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .cdn-info h3 {
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+            
+            .article-actions {
+                flex-direction: column;
+            }
+            
+            .article-actions button {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔥 Nostr Demo</h1>
+            <p>去中心化社交协议演示应用 - 独立版本</p>
+        </div>
+        
+        <div class="cdn-info">
+            <h3>📦 通过 CDN 加载 nostr-tools</h3>
+            <p>此版本通过 CDN 加载 nostr-tools 库，无需本地安装依赖，可直接在浏览器中运行</p>
+        </div>
+        
+        <div id="app">
+            <div class="loading">正在加载 nostr-tools 库...</div>
+        </div>
+        
+        <div id="status-message" class="status"></div>
+    </div>
+
+    <!-- 通过 CDN 加载 nostr-tools -->
+    <script src="https://unpkg.com/nostr-tools@2.7.0/lib/nostr.bundle.js"></script>
+    <script type="module">
+        // 使用全局变量方式
+        const { 
+            SimplePool, 
+            getEventHash, 
+            getSignature,
+            generatePrivateKey,
+            getPublicKey,
+            nip19,
+            validateEvent,
+            verifySignature
+        } = window.NostrTools;
+
+        // NostrClient 类
+        class NostrClient {
+            constructor() {
+                this.relays = [
+                    'wss://relay.damus.io',
+                    'wss://nos.lol',
+                    'wss://relay.snort.social',
+                    'wss://eden.nostr.land'
+                ];
+                
+                this.pool = new SimplePool();
+                this.privateKey = null;
+                this.publicKey = null;
+                this.connectionStatus = new Map();
+                
+                this.eventKinds = {
+                    METADATA: 0,
+                    TEXT_NOTE: 1,
+                    CONTACT_LIST: 3,
+                    REACTION: 7,
+                    COMMENT: 1111,
+                    LONG_FORM: 30023,
+                    BOOKMARK: 10003
+                };
+                
+                console.log('NostrClient initialized with CDN nostr-tools');
+            }
+
+            async createAccount(name = '', about = '') {
+                try {
+                    const privateKey = generatePrivateKey();
+                    const publicKey = getPublicKey(privateKey);
+                    const npub = nip19.npubEncode(publicKey);
+                    const nsec = nip19.nsecEncode(privateKey);
+                    
+                    this.privateKey = privateKey;
+                    this.publicKey = publicKey;
+                    
+                    if (name || about) {
+                        await this.publishUserMetadata(name, about);
+                    }
+                    
+                    console.log('账号创建成功:', { npub, publicKey: publicKey.substring(0, 16) + '...' });
+                    
+                    return {
+                        privateKey,
+                        publicKey,
+                        npub,
+                        nsec,
+                        name,
+                        about
+                    };
+                } catch (error) {
+                    console.error('创建账号失败:', error);
+                    throw error;
+                }
+            }
+
+            async importAccount(nsec) {
+                try {
+                    const decoded = nip19.decode(nsec);
+                    if (decoded.type !== 'nsec') {
+                        throw new Error('无效的 nsec 格式');
+                    }
+                    
+                    const privateKey = decoded.data;
+                    const publicKey = getPublicKey(privateKey);
+                    const npub = nip19.npubEncode(publicKey);
+                    
+                    this.privateKey = privateKey;
+                    this.publicKey = publicKey;
+                    
+                    const metadata = await this.getUserMetadata(publicKey);
+                    
+                    console.log('账号导入成功:', { npub, publicKey: publicKey.substring(0, 16) + '...' });
+                    
+                    return {
+                        privateKey,
+                        publicKey,
+                        npub,
+                        nsec,
+                        name: metadata?.name || '',
+                        about: metadata?.about || ''
+                    };
+                } catch (error) {
+                    console.error('导入账号失败:', error);
+                    throw error;
+                }
+            }
+
+            async initializeRelays() {
+                console.log('正在初始化中继连接...');
+                
+                const connectionPromises = this.relays.map(async (relay) => {
+                    try {
+                        await this.testRelayConnection(relay);
+                        this.connectionStatus.set(relay, 'connected');
+                        console.log(`✅ 中继连接成功: ${relay}`);
+                    } catch (error) {
+                        this.connectionStatus.set(relay, 'failed');
+                        console.error(`❌ 中继连接失败: ${relay}`, error.message);
+                    }
+                });
+                
+                await Promise.allSettled(connectionPromises);
+                
+                const connectedCount = Array.from(this.connectionStatus.values()).filter(status => status === 'connected').length;
+                console.log(`中继初始化完成: ${connectedCount}/${this.relays.length} 个中继连接成功`);
+            }
+
+            async testRelayConnection(relayUrl) {
+                return new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('连接超时'));
+                    }, 5000);
+                    
+                    try {
+                        const ws = new WebSocket(relayUrl);
+                        
+                        ws.onopen = () => {
+                            clearTimeout(timeout);
+                            ws.close();
+                            resolve();
+                        };
+                        
+                        ws.onerror = (error) => {
+                            clearTimeout(timeout);
+                            reject(error);
+                        };
+                        
+                    } catch (error) {
+                        clearTimeout(timeout);
+                        reject(error);
+                    }
+                });
+            }
+
+            createEvent(kind, content, tags = []) {
+                if (!this.privateKey || !this.publicKey) {
+                    throw new Error('用户未设置，无法创建事件');
+                }
+                
+                const event = {
+                    kind,
+                    content,
+                    tags,
+                    created_at: Math.floor(Date.now() / 1000),
+                    pubkey: this.publicKey
+                };
+                
+                event.id = getEventHash(event);
+                event.sig = getSignature(event, this.privateKey);
+                
+                const isValid = validateEvent(event);
+                if (!isValid) {
+                    throw new Error('事件验证失败');
+                }
+                
+                const isSignatureValid = verifySignature(event);
+                if (!isSignatureValid) {
+                    throw new Error('事件签名验证失败');
+                }
+                
+                console.log('事件创建成功:', { kind, id: event.id.substring(0, 16) + '...' });
+                return event;
+            }
+
+            async publishEvent(event) {
+                if (!event.id || !event.sig) {
+                    throw new Error('事件未正确签名');
+                }
+                
+                console.log('正在发布事件:', { 
+                    kind: event.kind, 
+                    id: event.id.substring(0, 16) + '...',
+                    relays: this.relays.length 
+                });
+                
+                const pubs = this.pool.publish(this.relays, event);
+                
+                return new Promise((resolve, reject) => {
+                    let successCount = 0;
+                    let errorCount = 0;
+                    const results = [];
+                    
+                    pubs.on('ok', (relayUrl) => {
+                        successCount++;
+                        results.push({ relay: relayUrl, status: 'ok' });
+                        console.log(`✅ 事件发布成功: ${relayUrl}`);
+                        
+                        if (successCount === 1) {
+                            resolve({ event, results });
+                        }
+                    });
+                    
+                    pubs.on('failed', (relayUrl, reason) => {
+                        errorCount++;
+                        results.push({ relay: relayUrl, status: 'failed', reason });
+                        console.error(`❌ 事件发布失败: ${relayUrl}`, reason);
+                        
+                        if (errorCount === this.relays.length) {
+                            reject(new Error(`所有中继发布失败: ${JSON.stringify(results)}`));
+                        }
+                    });
+                    
+                    setTimeout(() => {
+                        if (successCount === 0) {
+                            reject(new Error('发布超时'));
+                        }
+                    }, 10000);
+                });
+            }
+
+            async queryEvents(filter, timeout = 5000) {
+                console.log('正在查询事件:', filter);
+                const events = await this.pool.list(this.relays, [filter], { timeout });
+                console.log(`查询完成: 找到 ${events.length} 个事件`);
+                return events;
+            }
+
+            async publishUserMetadata(name, about, picture = '') {
+                const metadata = { name, about, picture };
+                const event = this.createEvent(this.eventKinds.METADATA, JSON.stringify(metadata));
+                return await this.publishEvent(event);
+            }
+
+            async getUserMetadata(pubkey) {
+                try {
+                    const events = await this.queryEvents({
+                        kinds: [this.eventKinds.METADATA],
+                        authors: [pubkey],
+                        limit: 1
+                    });
+                    
+                    if (events.length > 0) {
+                        const metadata = JSON.parse(events[0].content);
+                        return { ...metadata, pubkey, lastUpdated: events[0].created_at };
+                    }
+                    
+                    return null;
+                } catch (error) {
+                    console.error('获取用户元数据失败:', error);
+                    return null;
+                }
+            }
+
+            async publishArticle(title, content) {
+                const dTag = 'article_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
+                const event = this.createEvent(
+                    this.eventKinds.LONG_FORM,
+                    content,
+                    [
+                        ['d', dTag],
+                        ['title', title],
+                        ['published_at', Math.floor(Date.now() / 1000).toString()],
+                        ['alt', `这是一篇长文章: ${title}`]
+                    ]
+                );
+                
+                return await this.publishEvent(event);
+            }
+
+            async likeArticle(articleId, authorPubkey) {
+                const event = this.createEvent(
+                    this.eventKinds.REACTION,
+                    '+',
+                    [
+                        ['e', articleId, '', '', authorPubkey],
+                        ['p', authorPubkey]
+                    ]
+                );
+                
+                return await this.publishEvent(event);
+            }
+
+            async bookmarkArticle(articleId, title = '') {
+                const event = this.createEvent(
+                    this.eventKinds.BOOKMARK,
+                    '',
+                    [
+                        ['e', articleId, ''],
+                        ['title', title || '我的收藏']
+                    ]
+                );
+                
+                return await this.publishEvent(event);
+            }
+
+            async followAuthor(authorPubkey, alias = '') {
+                const currentFollows = await this.getCurrentFollowList();
+                
+                const isAlreadyFollowing = currentFollows.some(tag =>
+                    tag[0] === 'p' && tag[1] === authorPubkey
+                );
+                
+                if (isAlreadyFollowing) {
+                    throw new Error('已经关注过该作者');
+                }
+                
+                const newFollowList = [
+                    ...currentFollows,
+                    ['p', authorPubkey, '', alias]
+                ];
+                
+                const event = this.createEvent(this.eventKinds.CONTACT_LIST, '', newFollowList);
+                return await this.publishEvent(event);
+            }
+
+            async getCurrentFollowList() {
+                try {
+                    const events = await this.queryEvents({
+                        kinds: [this.eventKinds.CONTACT_LIST],
+                        authors: [this.publicKey],
+                        limit: 1
+                    });
+                    
+                    if (events.length > 0) {
+                        return events[0].tags.filter(tag => tag[0] === 'p');
+                    }
+                    
+                    return [];
+                } catch (error) {
+                    console.error('获取关注列表失败:', error);
+                    return [];
+                }
+            }
+
+            async commentOnArticle(articleId, authorPubkey, content) {
+                const articleATag = `30023:${authorPubkey}:${articleId.substring(0, 16)}`;
+                const event = this.createEvent(
+                    this.eventKinds.COMMENT,
+                    content,
+                    [
+                        ['A', articleATag],
+                        ['K', '30023'],
+                        ['P', authorPubkey]
+                    ]
+                );
+                
+                return await this.publishEvent(event);
+            }
+
+            async getTimeline(limit = 20) {
+                try {
+                    console.log('正在获取时间线...');
+                    
+                    const followList = await this.getCurrentFollowList();
+                    const followedAuthors = followList.map(tag => tag[1]);
+                    followedAuthors.push(this.publicKey);
+                    
+                    const articles = await this.queryEvents({
+                        kinds: [this.eventKinds.LONG_FORM],
+                        authors: followedAuthors.length > 0 ? followedAuthors : undefined,
+                        limit
+                    });
+                    
+                    articles.sort((a, b) => b.created_at - a.created_at);
+                    
+                    console.log(`时间线获取完成: ${articles.length} 篇文章`);
+                    return articles;
+                } catch (error) {
+                    console.error('获取时间线失败:', error);
+                    return [];
+                }
+            }
+
+            async addRelay(relayUrl) {
+                if (this.relays.includes(relayUrl)) {
+                    throw new Error('该中继已存在');
+                }
+                
+                await this.testRelayConnection(relayUrl);
+                this.relays.push(relayUrl);
+                this.connectionStatus.set(relayUrl, 'connected');
+                
+                console.log('中继添加成功:', relayUrl);
+            }
+
+            getRelays() {
+                return this.relays.map(url => ({
+                    url,
+                    connected: this.connectionStatus.get(url) === 'connected'
+                }));
+            }
+
+            getTagValue(tags, tagName) {
+                const tag = tags.find(t => t[0] === tagName);
+                return tag ? tag[1] : null;
+            }
+
+            truncateKey(key, length = 16) {
+                if (!key) return '';
+                return key.length > length ? key.substring(0, length) + '...' : key;
+            }
+
+            formatTime(timestamp) {
+                const date = new Date(timestamp * 1000);
+                return date.toLocaleString('zh-CN');
+            }
+
+            destroy() {
+                this.pool.close(this.relays);
+                console.log('NostrClient 已销毁');
+            }
+        }
+
+        // 应用类
+        class NostrApp {
+            constructor() {
+                this.client = new NostrClient();
+                this.currentSection = 'auth';
+                this.articles = [];
+            }
+
+            async init() {
+                this.createUI();
+                this.bindEvents();
+                
+                const savedUser = localStorage.getItem('nostr-user');
+                if (savedUser) {
+                    const user = JSON.parse(savedUser);
+                    this.client.privateKey = user.privateKey;
+                    this.client.publicKey = user.publicKey;
+                    this.showUserInfo(user);
+                    this.showSection('main');
+                }
+                
+                await this.client.initializeRelays();
+                this.updateRelayList();
+            }
+
+            createUI() {
+                const app = document.getElementById('app');
+                app.innerHTML = `
+                    <div id="auth-section" class="section" style="display: ${this.currentSection === 'auth' ? 'block' : 'none'};">
+                        <h2>欢迎使用 Nostr Demo</h2>
+                        
+                        <div class="tabs">
+                            <button class="tab active" data-tab="create">创建账号</button>
+                            <button class="tab" data-tab="import">导入账号</button>
+                        </div>
+                        
+                        <div id="create-tab" class="tab-content active">
+                            <div class="form-group">
+                                <label for="userName">用户名:</label>
+                                <input type="text" id="userName" placeholder="请输入用户名">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="userAbout">个人简介:</label>
+                                <textarea id="userAbout" placeholder="请输入个人简介"></textarea>
+                            </div>
+                            
+                            <button id="createAccount">创建账号</button>
+                        </div>
+                        
+                        <div id="import-tab" class="tab-content">
+                            <div class="form-group">
+                                <label for="nsecInput">私钥 (nsec):</label>
+                                <input type="password" id="nsecInput" placeholder="请输入 nsec 私钥">
+                            </div>
+                            
+                            <button id="importAccount">导入账号</button>
+                        </div>
+                    </div>
+                    
+                    <div id="main-section" class="section" style="display: ${this.currentSection === 'main' ? 'block' : 'none'};">
+                        <div id="user-info" class="user-info">
+                            <strong>用户:</strong> <span id="user-name"></span> 
+                            (<span id="user-pubkey"></span>)
+                            <br>
+                            <strong>简介:</strong> <span id="user-about"></span>
+                        </div>
+                        
+                        <div class="tabs">
+                            <button class="tab active" data-tab="timeline">时间线</button>
+                            <button class="tab" data-tab="publish">发布文章</button>
+                            <button class="tab" data-tab="relays">中继管理</button>
+                        </div>
+                        
+                        <div id="timeline-tab" class="tab-content active">
+                            <div style="margin-bottom: 20px;">
+                                <button id="refreshTimeline">刷新时间线</button>
+                            </div>
+                            
+                            <div id="timeline-content">
+                                <div class="loading">点击刷新时间线获取内容...</div>
+                            </div>
+                        </div>
+                        
+                        <div id="publish-tab" class="tab-content">
+                            <div class="form-group">
+                                <label for="articleTitle">文章标题:</label>
+                                <input type="text" id="articleTitle" placeholder="请输入文章标题">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="articleContent">文章内容:</label>
+                                <textarea id="articleContent" placeholder="请输入文章内容" rows="10"></textarea>
+                            </div>
+                            
+                            <button id="publishArticle">发布文章</button>
+                        </div>
+                        
+                        <div id="relays-tab" class="tab-content">
+                            <div class="form-group">
+                                <label for="relayUrl">中继地址:</label>
+                                <input type="url" id="relayUrl" placeholder="wss://relay.example.com">
+                            </div>
+                            
+                            <button id="addRelay">添加中继</button>
+                            
+                            <div id="relay-list">
+                                <h3>中继列表</h3>
+                                <div id="relay-items"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            bindEvents() {
+                // 标签切换
+                document.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('tab')) {
+                        this.switchTab(e.target.dataset.tab);
+                    }
+                });
+
+                // 创建账号
+                document.getElementById('createAccount').addEventListener('click', async () => {
+                    await this.handleCreateAccount();
+                });
+
+                // 导入账号
+                document.getElementById('importAccount').addEventListener('click', async () => {
+                    await this.handleImportAccount();
+                });
+
+                // 发布文章
+                document.getElementById('publishArticle').addEventListener('click', async () => {
+                    await this.handlePublishArticle();
+                });
+
+                // 刷新时间线
+                document.getElementById('refreshTimeline').addEventListener('click', async () => {
+                    await this.handleRefreshTimeline();
+                });
+
+                // 添加中继
+                document.getElementById('addRelay').addEventListener('click', async () => {
+                    await this.handleAddRelay();
+                });
+
+                // 文章操作
+                document.addEventListener('click', async (e) => {
+                    if (e.target.classList.contains('like-btn')) {
+                        await this.handleLikeArticle(e.target);
+                    }
+                    if (e.target.classList.contains('bookmark-btn')) {
+                        await this.handleBookmarkArticle(e.target);
+                    }
+                    if (e.target.classList.contains('follow-btn')) {
+                        await this.handleFollowAuthor(e.target);
+                    }
+                    if (e.target.classList.contains('comment-btn')) {
+                        await this.handleCommentArticle(e.target);
+                    }
+                });
+            }
+
+            switchTab(tabType) {
+                const tabs = document.querySelectorAll('.tab');
+                tabs.forEach(tab => {
+                    tab.classList.remove('active');
+                    if (tab.dataset.tab === tabType) {
+                        tab.classList.add('active');
+                    }
+                });
+                
+                const contents = document.querySelectorAll('.tab-content');
+                contents.forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                const activeContent = document.getElementById(tabType + '-tab');
+                if (activeContent) {
+                    activeContent.classList.add('active');
+                }
+            }
+
+            showSection(sectionName) {
+                const sections = ['auth-section', 'main-section'];
+                sections.forEach(section => {
+                    const element = document.getElementById(section);
+                    if (element) {
+                        element.style.display = 'none';
+                    }
+                });
+                
+                const activeSection = document.getElementById(sectionName + '-section');
+                if (activeSection) {
+                    activeSection.style.display = 'block';
+                }
+                
+                this.currentSection = sectionName;
+            }
+
+            showUserInfo(user) {
+                document.getElementById('user-name').textContent = user.name || '未设置';
+                document.getElementById('user-pubkey').textContent = this.client.truncateKey(user.publicKey);
+                document.getElementById('user-about').textContent = user.about || '未设置';
+            }
+
+            async handleCreateAccount() {
+                try {
+                    this.showStatus('创建账号中...', 'info');
+                    
+                    const name = document.getElementById('userName').value;
+                    const about = document.getElementById('userAbout').value;
+                    
+                    const user = await this.client.createAccount(name, about);
+                    
+                    localStorage.setItem('nostr-user', JSON.stringify(user));
+                    
+                    this.showStatus('账号创建成功！', 'success');
+                    this.showUserInfo(user);
+                    this.showSection('main');
+                    
+                } catch (error) {
+                    this.showStatus('创建账号失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleImportAccount() {
+                try {
+                    this.showStatus('导入账号中...', 'info');
+                    
+                    const nsec = document.getElementById('nsecInput').value;
+                    const user = await this.client.importAccount(nsec);
+                    
+                    localStorage.setItem('nostr-user', JSON.stringify(user));
+                    
+                    this.showStatus('账号导入成功！', 'success');
+                    this.showUserInfo(user);
+                    this.showSection('main');
+                    
+                } catch (error) {
+                    this.showStatus('导入账号失败: ' + error.message, 'error');
+                }
+            }
+
+            async handlePublishArticle() {
+                try {
+                    this.showStatus('发布文章中...', 'info');
+                    
+                    const title = document.getElementById('articleTitle').value;
+                    const content = document.getElementById('articleContent').value;
+                    
+                    if (!title || !content) {
+                        this.showStatus('请填写文章标题和内容', 'error');
+                        return;
+                    }
+                    
+                    const result = await this.client.publishArticle(title, content);
+                    
+                    this.showStatus('文章发布成功！', 'success');
+                    
+                    // 清空表单
+                    document.getElementById('articleTitle').value = '';
+                    document.getElementById('articleContent').value = '';
+                    
+                    // 添加到本地列表
+                    this.articles.unshift(result.event);
+                    this.updateTimeline();
+                    
+                } catch (error) {
+                    this.showStatus('发布文章失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleRefreshTimeline() {
+                try {
+                    this.showStatus('刷新时间线中...', 'info');
+                    
+                    const articles = await this.client.getTimeline();
+                    this.articles = articles;
+                    this.updateTimeline();
+                    
+                    this.showStatus('时间线已更新', 'success');
+                } catch (error) {
+                    this.showStatus('刷新时间线失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleAddRelay() {
+                try {
+                    const relayUrl = document.getElementById('relayUrl').value;
+                    
+                    if (!relayUrl) {
+                        this.showStatus('请输入中继地址', 'error');
+                        return;
+                    }
+                    
+                    this.showStatus('连接中继中...', 'info');
+                    
+                    await this.client.addRelay(relayUrl);
+                    
+                    this.showStatus('中继连接成功！', 'success');
+                    this.updateRelayList();
+                    
+                    document.getElementById('relayUrl').value = '';
+                    
+                } catch (error) {
+                    this.showStatus('连接中继失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleLikeArticle(button) {
+                try {
+                    const articleId = button.dataset.articleId;
+                    const authorPubkey = button.dataset.authorPubkey;
+                    
+                    await this.client.likeArticle(articleId, authorPubkey);
+                    
+                    button.classList.add('active');
+                    button.textContent = '已点赞';
+                    
+                    this.showStatus('点赞成功！', 'success');
+                    
+                } catch (error) {
+                    this.showStatus('点赞失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleBookmarkArticle(button) {
+                try {
+                    const articleId = button.dataset.articleId;
+                    const title = button.dataset.title;
+                    
+                    await this.client.bookmarkArticle(articleId, title);
+                    
+                    button.classList.add('active');
+                    button.textContent = '已收藏';
+                    
+                    this.showStatus('收藏成功！', 'success');
+                    
+                } catch (error) {
+                    this.showStatus('收藏失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleFollowAuthor(button) {
+                try {
+                    const authorPubkey = button.dataset.authorPubkey;
+                    const authorName = button.dataset.authorName;
+                    
+                    await this.client.followAuthor(authorPubkey, authorName);
+                    
+                    button.classList.add('active');
+                    button.textContent = '已关注';
+                    
+                    this.showStatus('关注成功！', 'success');
+                    
+                } catch (error) {
+                    this.showStatus('关注失败: ' + error.message, 'error');
+                }
+            }
+
+            async handleCommentArticle(button) {
+                try {
+                    const articleId = button.dataset.articleId;
+                    const authorPubkey = button.dataset.authorPubkey;
+                    
+                    const content = prompt('请输入评论内容:');
+                    if (!content) return;
+                    
+                    await this.client.commentOnArticle(articleId, authorPubkey, content);
+                    
+                    this.showStatus('评论发布成功！', 'success');
+                    
+                } catch (error) {
+                    this.showStatus('发布评论失败: ' + error.message, 'error');
+                }
+            }
+
+            updateTimeline() {
+                const timelineContent = document.getElementById('timeline-content');
+                
+                if (this.articles.length === 0) {
+                    timelineContent.innerHTML = '<div class="status info">暂无文章，请发布文章或点击刷新时间线</div>';
+                    return;
+                }
+                
+                let html = '';
+                this.articles.forEach(article => {
+                    const title = this.client.getTagValue(article.tags, 'title') || '无标题';
+                    const timeStr = this.client.formatTime(article.created_at);
+                    
+                    html += `
+                        <div class="article-item">
+                            <div class="article-title">${this.escapeHtml(title)}</div>
+                            <div class="article-content">${this.escapeHtml(article.content.substring(0, 200))}${article.content.length > 200 ? '...' : ''}</div>
+                            <div class="article-meta">
+                                作者: ${this.client.truncateKey(article.pubkey)} | 
+                                发布时间: ${timeStr}
+                            </div>
+                            <div class="article-actions">
+                                <button class="like-btn" data-article-id="${article.id}" data-author-pubkey="${article.pubkey}">
+                                    👍 点赞
+                                </button>
+                                <button class="bookmark-btn" data-article-id="${article.id}" data-title="${this.escapeHtml(title)}">
+                                    📚 收藏
+                                </button>
+                                <button class="follow-btn" data-author-pubkey="${article.pubkey}" data-author-name="${this.client.truncateKey(article.pubkey)}">
+                                    👥 关注
+                                </button>
+                                <button class="comment-btn" data-article-id="${article.id}" data-author-pubkey="${article.pubkey}">
+                                    💬 评论
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                timelineContent.innerHTML = html;
+            }
+
+            updateRelayList() {
+                const relayItems = document.getElementById('relay-items');
+                const relays = this.client.getRelays();
+                
+                let html = '';
+                relays.forEach(relay => {
+                    html += `
+                        <div class="relay-item">
+                            <div>
+                                <span class="relay-status ${relay.connected ? 'connected' : 'disconnected'}"></span>
+                                ${relay.url}
+                            </div>
+                            <div>${relay.connected ? '已连接' : '未连接'}</div>
+                        </div>
+                    `;
+                });
+                
+                relayItems.innerHTML = html;
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            showStatus(message, type) {
+                const statusDiv = document.getElementById('status-message');
+                statusDiv.className = `status ${type}`;
+                statusDiv.textContent = message;
+                statusDiv.style.display = 'block';
+                
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // 启动应用
+        const app = new NostrApp();
+        app.init().catch(error => {
+            console.error('应用启动失败:', error);
+            document.getElementById('app').innerHTML = `
+                <div class="section">
+                    <div class="status error" style="display: block;">
+                        应用启动失败: ${error.message}
+                    </div>
+                </div>
+            `;
+        });
+    </script>
+</body>
+</html>

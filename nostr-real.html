@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nostr Demo - 真实加密版本</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .section {
+            background: white;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .status {
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 6px;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #b8daff;
+        }
+        
+        .user-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .user-info strong {
+            color: #667eea;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e1e1e1;
+        }
+        
+        .tab {
+            background: none;
+            border: none;
+            padding: 15px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            color: #667eea;
+            background: #f8f9fa;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .article-item {
+            border: 1px solid #e1e1e1;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #fafafa;
+        }
+        
+        .article-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .article-content {
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.7;
+        }
+        
+        .article-meta {
+            font-size: 0.9em;
+            color: #999;
+            margin-bottom: 15px;
+        }
+        
+        .article-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .article-actions button {
+            background: #6c757d;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        
+        .article-actions button.active {
+            background: #667eea;
+        }
+        
+        .relay-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            border: 1px solid #e1e1e1;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        
+        .relay-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .relay-status.connected {
+            background: #28a745;
+        }
+        
+        .relay-status.disconnected {
+            background: #dc3545;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .version-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .version-info h3 {
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .warning strong {
+            color: #d63384;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+            
+            .article-actions {
+                flex-direction: column;
+            }
+            
+            .article-actions button {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔥 Nostr Demo</h1>
+            <p>去中心化社交协议演示应用 - 真实加密版本</p>
+        </div>
+        
+        <div class="version-info">
+            <h3>✨ 真实加密版本特性</h3>
+            <ul>
+                <li>使用真实的 nostr-tools 库</li>
+                <li>真实的 secp256k1 加密和签名</li>
+                <li>完整的事件验证和签名验证</li>
+                <li>兼容所有标准 Nostr 客户端</li>
+                <li>支持完整的 NIP 协议规范</li>
+            </ul>
+        </div>
+        
+        <div class="warning">
+            <strong>注意:</strong> 此版本需要通过 webpack 构建运行，请使用 <code>npm run dev</code> 启动开发服务器。
+        </div>
+        
+        <div id="app">
+            <div class="loading">正在加载 nostr-tools 库...</div>
+        </div>
+        
+        <div id="status-message" class="status"></div>
+    </div>
+
+    <script type="module">
+        // 由于 nostr-tools 需要 Node.js 环境，这个文件主要用于说明
+        // 实际运行请使用 webpack 构建版本
+        
+        document.getElementById('app').innerHTML = `
+            <div class="section">
+                <h2>🔧 如何运行真实加密版本</h2>
+                
+                <div class="form-group">
+                    <h3>1. 安装依赖</h3>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 6px; overflow-x: auto;">
+npm install
+                    </pre>
+                </div>
+                
+                <div class="form-group">
+                    <h3>2. 启动开发服务器</h3>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 6px; overflow-x: auto;">
+npm run dev
+                    </pre>
+                </div>
+                
+                <div class="form-group">
+                    <h3>3. 或者使用启动脚本</h3>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 6px; overflow-x: auto;">
+chmod +x start.sh
+./start.sh
+                    </pre>
+                </div>
+                
+                <div class="form-group">
+                    <h3>4. 在浏览器中访问</h3>
+                    <p>开发服务器会自动打开浏览器，或者手动访问:</p>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 6px; overflow-x: auto;">
+http://localhost:8080
+                    </pre>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🔐 真实加密实现特性</h2>
+                
+                <div class="article-item">
+                    <div class="article-title">真实的密钥生成</div>
+                    <div class="article-content">
+                        使用 nostr-tools 的 <code>generatePrivateKey()</code> 函数生成真实的 secp256k1 私钥
+                    </div>
+                </div>
+                
+                <div class="article-item">
+                    <div class="article-title">真实的公钥派生</div>
+                    <div class="article-content">
+                        使用 <code>getPublicKey(privateKey)</code> 从私钥派生公钥，符合 secp256k1 标准
+                    </div>
+                </div>
+                
+                <div class="article-item">
+                    <div class="article-title">真实的事件签名</div>
+                    <div class="article-content">
+                        使用 <code>getSignature(event, privateKey)</code> 进行真实的 ECDSA 签名
+                    </div>
+                </div>
+                
+                <div class="article-item">
+                    <div class="article-title">完整的事件验证</div>
+                    <div class="article-content">
+                        使用 <code>validateEvent(event)</code> 和 <code>verifySignature(event)</code> 进行完整验证
+                    </div>
+                </div>
+                
+                <div class="article-item">
+                    <div class="article-title">标准 Bech32 编码</div>
+                    <div class="article-content">
+                        使用 <code>nip19.npubEncode()</code> 和 <code>nip19.nsecEncode()</code> 进行标准编码
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📚 支持的功能</h2>
+                
+                <div class="tabs">
+                    <button class="tab active" onclick="showFeatureTab('account')">账号管理</button>
+                    <button class="tab" onclick="showFeatureTab('social')">社交功能</button>
+                    <button class="tab" onclick="showFeatureTab('technical')">技术特性</button>
+                </div>
+                
+                <div id="account-features" class="tab-content active">
+                    <ul>
+                        <li>✅ 创建新账号 (真实的 secp256k1 密钥对)</li>
+                        <li>✅ 导入现有账号 (支持 nsec 格式)</li>
+                        <li>✅ 用户元数据管理 (NIP-01)</li>
+                        <li>✅ 密钥对验证</li>
+                        <li>✅ 账号信息持久化</li>
+                    </ul>
+                </div>
+                
+                <div id="social-features" class="tab-content">
+                    <ul>
+                        <li>✅ 长文发布 (NIP-23)</li>
+                        <li>✅ 点赞文章 (NIP-25)</li>
+                        <li>✅ 收藏文章 (NIP-51)</li>
+                        <li>✅ 关注/取消关注 (NIP-02)</li>
+                        <li>✅ 评论文章 (NIP-22)</li>
+                        <li>✅ 时间线获取</li>
+                        <li>✅ 中继管理</li>
+                    </ul>
+                </div>
+                
+                <div id="technical-features" class="tab-content">
+                    <ul>
+                        <li>✅ 真实的 secp256k1 加密</li>
+                        <li>✅ 完整的事件验证</li>
+                        <li>✅ 标准 Nostr 协议兼容</li>
+                        <li>✅ 多中继支持</li>
+                        <li>✅ 事件签名验证</li>
+                        <li>✅ 错误处理和重试</li>
+                        <li>✅ 连接状态监控</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🚀 项目结构</h2>
+                
+                <pre style="background: #f8f9fa; padding: 15px; border-radius: 6px; overflow-x: auto;">
+nostr-demo/
+├── src/
+│   ├── index.html          # 主页面
+│   ├── index.js            # 应用主入口
+│   ├── nostr-client.js     # 真实的 Nostr 客户端
+│   └── ui-manager.js       # UI 管理器
+├── nostr-real.html         # 当前说明页面
+├── simple.html             # 简化版本（用于演示）
+├── package.json            # 项目配置
+├── webpack.config.js       # Webpack 配置
+├── start.sh               # 启动脚本
+└── README.md              # 详细说明
+                </pre>
+            </div>
+        `;
+        
+        function showFeatureTab(tabName) {
+            // 隐藏所有内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // 移除所有标签的激活状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的内容
+            document.getElementById(tabName + '-features').classList.add('active');
+            
+            // 激活选中的标签
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
