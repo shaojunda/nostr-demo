@@ -336,6 +336,92 @@
                 margin-bottom: 10px;
             }
         }
+
+        /* JSON 模态框样式 */
+        .json-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .json-modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90%;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .json-modal-header {
+            background: #667eea;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .json-modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .json-modal-header .close-json-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .json-modal-body {
+            padding: 20px;
+        }
+
+        .json-modal-footer {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .json-modal-footer button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            color: white;
+        }
+
+        /* 开发者模式样式 */
+        .dev-button {
+            display: none;
+        }
+
+        .dev-mode .dev-button {
+            display: inline-block;
+        }
+
+        .dev-mode #toggleDevMode {
+            background: #28a745 !important;
+        }
     </style>
 </head>
 <body>
@@ -1376,8 +1462,10 @@ npm run dev
                     });
                 }
 
+
+
                 // 添加中继
-            async addRelay(relayUrl) {
+                async addRelay(relayUrl) {
                     if (this.relays.includes(relayUrl)) {
                     throw new Error('该中继已存在');
                 }
@@ -1469,7 +1557,7 @@ npm run dev
                         return true;
                     }
                     return false;
-                }
+            }
         }
 
         // 应用类
@@ -1572,14 +1660,15 @@ npm run dev
                                             <option value="user">我的文章</option>
                                         </select>
                                         <button id="refreshTimeline" style="margin-left: 10px;">刷新时间线</button>
-                                        <button id="debugRelays" style="background: #6c757d; margin-left: 10px;">调试中继</button>
-                    <button id="testSpecificPubkey" style="background: #28a745; margin-left: 10px;">测试特定公钥</button>
-                    <button id="testSpecificRelay" style="background: #ffc107; margin-left: 10px;">测试特定中继</button>
-                    <button id="test30023Events" style="background: #17a2b8; margin-left: 10px;">测试30023事件</button>
-                    <button id="queryEventById" style="background: #6f42c1; margin-left: 10px;">根据ID查询</button>
-                    <button id="testSpecificRelayForPubkey" style="background: #6f42c1; margin-left: 10px;">测试特定中继公钥</button>
-                    <button id="testRawWebSocket" style="background: #fd7e14; margin-left: 10px;">原生WebSocket测试</button>
-                    <button id="testTimelineLogic" style="background: #20c997; margin-left: 10px;">测试时间线逻辑</button>
+                                        <button id="debugRelays" class="dev-button" style="background: #6c757d; margin-left: 10px;">调试中继</button>
+                    <button id="testSpecificPubkey" class="dev-button" style="background: #28a745; margin-left: 10px;">测试特定公钥</button>
+                    <button id="testSpecificRelay" class="dev-button" style="background: #ffc107; margin-left: 10px;">测试特定中继</button>
+                    <button id="test30023Events" class="dev-button" style="background: #17a2b8; margin-left: 10px;">测试30023事件</button>
+                    <button id="queryEventById" class="dev-button" style="background: #6f42c1; margin-left: 10px;">根据ID查询</button>
+                    <button id="testSpecificRelayForPubkey" class="dev-button" style="background: #6f42c1; margin-left: 10px;">测试特定中继公钥</button>
+                    <button id="testRawWebSocket" class="dev-button" style="background: #fd7e14; margin-left: 10px;">原生WebSocket测试</button>
+                    <button id="testTimelineLogic" class="dev-button" style="background: #20c997; margin-left: 10px;">测试时间线逻辑</button>
+                    <button id="toggleDevMode" style="background: #6c757d; margin-left: 10px;">🔧 开发者模式</button>
                                     </div>
                             </div>
 
@@ -1647,7 +1736,7 @@ npm run dev
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                        </div>
 
                         <div id="relays-tab" class="tab-content">
                             <div class="form-group">
@@ -1770,6 +1859,11 @@ npm run dev
                     }
                 });
 
+                // 开发者模式切换
+                document.getElementById('toggleDevMode').addEventListener('click', () => {
+                    this.toggleDevMode();
+                });
+
                 // 添加中继
                 document.getElementById('addRelay').addEventListener('click', async () => {
                     await this.handleAddRelay();
@@ -1790,6 +1884,26 @@ npm run dev
                     }
                     if (e.target.classList.contains('comment-btn')) {
                         await this.handleCommentArticle(e.target);
+                    }
+                    if (e.target.classList.contains('show-json-btn')) {
+                        const eventId = e.target.dataset.eventId;
+                        this.showEventJson(eventId);
+                    }
+                    if (e.target.classList.contains('close-json-btn')) {
+                        const eventId = e.target.dataset.eventId;
+                        this.hideEventJson(eventId);
+                    }
+                    if (e.target.classList.contains('copy-json-btn')) {
+                        const eventId = e.target.dataset.eventId;
+                        this.copyEventJson(eventId);
+                    }
+                });
+
+                // 点击模态框背景关闭
+                document.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('json-modal')) {
+                        const eventId = e.target.id.replace('json-modal-', '');
+                        this.hideEventJson(eventId);
                     }
                 });
 
@@ -1818,7 +1932,7 @@ npm run dev
                     // 切换私钥显示
                     document.getElementById('toggle-private-key').addEventListener('click', () => {
                         this.togglePrivateKeyVisibility();
-                    });
+                });
             }
 
             switchTab(tabType) {
@@ -2147,8 +2261,8 @@ npm run dev
                     } catch (error) {
                         console.error('调试中继失败:', error);
                         this.showStatus('调试中继失败: ' + error.message, 'error');
-                    }
                 }
+            }
 
             async handleLikeArticle(button) {
                 try {
@@ -2265,26 +2379,44 @@ npm run dev
 
                     html += `
                         <div class="article-item">
-                                <div class="article-title">${eventType} - ${this.escapeHtml(title)}</div>
-                                <div class="article-content">${this.escapeHtml(content.substring(0, 200))}${content.length > 200 ? '...' : ''}</div>
+                            <div class="article-title">${eventType} - ${this.escapeHtml(title)}</div>
+                            <div class="article-content">${this.escapeHtml(content.substring(0, 200))}${content.length > 200 ? '...' : ''}</div>
                             <div class="article-meta">
-                                    作者: ${this.client.truncateKey(event.pubkey)} |
-                                    发布时间: ${timeStr} |
-                                    事件类型: ${event.kind}
+                                作者: ${this.client.truncateKey(event.pubkey)} |
+                                发布时间: ${timeStr} |
+                                事件类型: ${event.kind}
                             </div>
                             <div class="article-actions">
-                                    <button class="like-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}">
+                                <button class="like-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}">
                                     👍 点赞
                                 </button>
-                                    <button class="bookmark-btn" data-article-id="${event.id}" data-title="${this.escapeHtml(title)}">
+                                <button class="bookmark-btn" data-article-id="${event.id}" data-title="${this.escapeHtml(title)}">
                                     📚 收藏
                                 </button>
-                                    <button class="follow-btn" data-author-pubkey="${event.pubkey}" data-author-name="${this.client.truncateKey(event.pubkey)}">
+                                <button class="follow-btn" data-author-pubkey="${event.pubkey}" data-author-name="${this.client.truncateKey(event.pubkey)}">
                                     👥 关注
                                 </button>
-                                    <button class="comment-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}">
+                                <button class="comment-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}">
                                     💬 评论
                                 </button>
+                                <button class="show-json-btn" data-event-id="${event.id}" style="background: #6c757d; margin-left: 5px;">
+                                    📋 JSON
+                                </button>
+                            </div>
+                            <div id="json-modal-${event.id}" class="json-modal" style="display: none;">
+                                <div class="json-modal-content">
+                                    <div class="json-modal-header">
+                                        <h3>事件完整 JSON</h3>
+                                        <button class="close-json-btn" data-event-id="${event.id}">&times;</button>
+                                    </div>
+                                    <div class="json-modal-body">
+                                        <textarea id="json-content-${event.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(event, null, 2)}</textarea>
+                                    </div>
+                                    <div class="json-modal-footer">
+                                        <button class="copy-json-btn" data-event-id="${event.id}" style="background: #28a745;">复制 JSON</button>
+                                        <button class="close-json-btn" data-event-id="${event.id}" style="background: #6c757d;">关闭</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -2370,6 +2502,52 @@ npm run dev
                 setTimeout(() => {
                     statusDiv.style.display = 'none';
                 }, 3000);
+            }
+
+            // 显示事件 JSON
+            showEventJson(eventId) {
+                const modal = document.getElementById(`json-modal-${eventId}`);
+                if (modal) {
+                    modal.style.display = 'flex';
+                }
+            }
+
+            // 隐藏事件 JSON
+            hideEventJson(eventId) {
+                const modal = document.getElementById(`json-modal-${eventId}`);
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+            }
+
+                        // 复制 JSON 内容
+            copyEventJson(eventId) {
+                const textarea = document.getElementById(`json-content-${eventId}`);
+                if (textarea) {
+                    textarea.select();
+                    textarea.setSelectionRange(0, 99999); // 兼容移动端
+
+                    try {
+                        document.execCommand('copy');
+                        this.showStatus('JSON 已复制到剪贴板', 'success');
+                    } catch (err) {
+                        this.showStatus('复制失败，请手动复制', 'error');
+                    }
+                }
+            }
+
+            // 切换开发者模式
+            toggleDevMode() {
+                const app = document.getElementById('app');
+                const isDevMode = app.classList.contains('dev-mode');
+
+                if (isDevMode) {
+                    app.classList.remove('dev-mode');
+                    this.showStatus('开发者模式已关闭', 'info');
+                } else {
+                    app.classList.add('dev-mode');
+                    this.showStatus('开发者模式已开启', 'success');
+                }
             }
 
                 // 密钥管理相关方法
@@ -2471,7 +2649,7 @@ npm run dev
                             privateKeyDisplay.value = user.nsec;
                         }
                     }
-                }
+            }
         }
 
         // 启动应用
