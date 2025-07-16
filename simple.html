@@ -431,22 +431,6 @@
             <p>去中心化社交协议演示应用 - 真实加密版本</p>
         </div>
 
-        <div class="version-info">
-            <h3>✨ 真实加密版本特性</h3>
-            <ul>
-                <li>使用真实的 nostr-tools 库 (通过 CDN 加载)</li>
-                <li>真实的 secp256k1 加密和签名</li>
-                <li>完整的事件验证和签名验证</li>
-                <li>兼容所有标准 Nostr 客户端</li>
-                <li>支持完整的 NIP 协议规范</li>
-                <li>可以直接在浏览器中运行，无需服务器</li>
-            </ul>
-        </div>
-
-        <div class="warning">
-            <strong>注意:</strong> 此版本可以直接在浏览器中打开运行，无需 npm 服务器！
-        </div>
-
         <div id="app">
             <div class="loading">正在加载 nostr-tools 库...</div>
         </div>
@@ -1974,7 +1958,7 @@ npm run dev
 
             showUserInfo(user) {
                 document.getElementById('user-name').textContent = user.name || '未设置';
-                document.getElementById('user-pubkey').textContent = this.client.truncateKey(user.publicKey);
+                document.getElementById('user-pubkey').textContent = user.npub;
                 document.getElementById('user-about').textContent = user.about || '未设置';
 
                     // 更新密钥显示
