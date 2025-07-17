@@ -1668,6 +1668,11 @@ npm run dev
                             </div>
                         </div>
 
+                        <div id="article-viewer" style="display:none">
+                            <button id="back-to-timeline" style="margin-bottom: 20px;">← 返回时间线</button>
+                            <div id="article-content"></div>
+                        </div>
+
                         <div id="publish-tab" class="tab-content">
                             <div class="form-group">
                                 <label for="articleTitle">文章标题:</label>
@@ -1890,6 +1895,11 @@ npm run dev
                         if (e.target.classList.contains('copy-json-btn')) {
                             const eventId = e.target.dataset.eventId;
                             this.copyEventJson(eventId);
+                        }
+                        // 文章点击事件
+                        if (e.target.closest('.article-item') && e.target.closest('.article-item').dataset.articleId) {
+                            const articleId = e.target.closest('.article-item').dataset.articleId;
+                            await this.showArticleViewer(articleId);
                         }
                     });
 
@@ -2374,7 +2384,7 @@ npm run dev
                         }
 
                         html += `
-                        <div class="article-item">
+                        <div class="article-item" data-article-id="${event.id}" style="cursor: pointer;">
                             <div class="article-title">${eventType} - ${this.escapeHtml(title)}</div>
                             <div class="article-content">${this.escapeHtml(content.substring(0, 200))}${content.length > 200 ? '...' : ''}</div>
                             <div class="article-meta">
@@ -2645,6 +2655,112 @@ npm run dev
                             privateKeyDisplay.value = user.nsec;
                         }
                     }
+                }
+
+                // 获取某篇文章的评论，分页
+                async getCommentsForArticle(article, offset = 0, limit = 5) {
+                    // 评论 kind 通常为 1111，tag A = 30023:pubkey:articleId
+                    const aTag = `30023:${article.pubkey}:${article.id}`;
+                    const filter = {
+                        kinds: [this.client.eventKinds.COMMENT],
+                        '#A': [aTag],
+                        limit: offset + limit
+                    };
+                    // 合并所有中继评论
+                    let allComments = [];
+                    for (const relay of this.client.relays) {
+                        try {
+                            const events = await this.client.pool.querySync([relay], filter, { timeout: 8000 });
+                            allComments.push(...events);
+                        } catch (e) {}
+                    }
+                    // 去重
+                    const unique = Array.from(new Map(allComments.map(e => [e.id, e])).values());
+                    // 按时间升序
+                    unique.sort((a, b) => a.created_at - b.created_at);
+                    // 分页
+                    return unique.slice(offset, offset + limit);
+                }
+
+                async showArticleViewer(articleId) {
+                    // 获取文章对象
+                    const article = this.articles.find(a => a.id === articleId);
+                    if (!article) return;
+
+                    // 构建文章详情HTML
+                    const title = this.client.getTagValue(article.tags, 'title') || '无标题';
+                    const publishedAt = this.client.getTagValue(article.tags, 'published_at');
+                    const timeStr = publishedAt ? this.client.formatTime(parseInt(publishedAt)) : this.client.formatTime(article.created_at);
+                    const content = article.content;
+                    const author = this.client.truncateKey(article.pubkey);
+
+                    // 评论分页参数
+                    let commentPage = 0;
+                    const pageSize = 5;
+                    let allCommentsLoaded = false;
+                    let comments = [];
+
+                    // 评论区容器
+                    const renderComments = async () => {
+                        const commentList = document.getElementById('comment-list');
+                        commentList.innerHTML = comments.map(c => {
+                            const cTime = this.client.formatTime(c.created_at);
+                            return `<div class="comment-item">
+                                <div class="comment-author">${this.client.truncateKey(c.pubkey)}</div>
+                                <div class="comment-content">${this.escapeHtml(c.content)}</div>
+                                <div class="comment-time">${cTime}</div>
+                            </div>`;
+                        }).join('');
+
+                        const moreBtn = document.getElementById('load-more-comments');
+                        if (allCommentsLoaded) {
+                            moreBtn.style.display = 'none';
+                            document.getElementById('no-more-comments').style.display = 'block';
+                        } else {
+                            moreBtn.style.display = 'block';
+                            document.getElementById('no-more-comments').style.display = 'none';
+                        }
+                    };
+
+                    // 加载评论
+                    const loadComments = async () => {
+                        const newComments = await this.getCommentsForArticle(article, commentPage * pageSize, pageSize);
+                        if (newComments.length < pageSize) allCommentsLoaded = true;
+                        comments = comments.concat(newComments);
+                        commentPage++;
+                        await renderComments();
+                    };
+
+                    // 阅读页HTML
+                    const viewer = document.getElementById('article-viewer');
+                    const articleContent = document.getElementById('article-content');
+                    articleContent.innerHTML = `
+                        <div class="article-title" style="font-size:1.5em;font-weight:600;margin-bottom:15px;">${this.escapeHtml(title)}</div>
+                        <div class="article-meta" style="margin-bottom:15px;color:#666;">作者: ${author} | 发布时间: ${timeStr}</div>
+                        <div class="article-content" style="margin-bottom:30px;line-height:1.7;">${this.escapeHtml(content)}</div>
+                        <div class="comments-section">
+                            <h3 style="margin-bottom:15px;">评论</h3>
+                            <div id="comment-list"></div>
+                            <button id="load-more-comments" style="margin-top:15px;">加载更多评论</button>
+                            <div id="no-more-comments" style="display:none;color:#999;margin-top:15px;">没有更多评论了</div>
+                        </div>
+                    `;
+
+                    // 切换显示
+                    document.getElementById('timeline-tab').style.display = 'none';
+                    viewer.style.display = 'block';
+
+                    // 绑定返回按钮
+                    document.getElementById('back-to-timeline').onclick = () => {
+                        viewer.style.display = 'none';
+                        document.getElementById('timeline-tab').style.display = 'block';
+                    };
+
+                    // 绑定加载更多
+                    document.getElementById('load-more-comments').onclick = loadComments;
+
+                    // 初始加载
+                    await loadComments();
                 }
             }
 
