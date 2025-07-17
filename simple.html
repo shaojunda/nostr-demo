@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -48,7 +49,7 @@
             padding: 25px;
             margin-bottom: 20px;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
         .section h2 {
@@ -68,7 +69,9 @@
             color: #555;
         }
 
-        input, textarea, select {
+        input,
+        textarea,
+        select {
             width: 100%;
             padding: 12px;
             border: 2px solid #e1e1e1;
@@ -77,7 +80,9 @@
             transition: border-color 0.3s;
         }
 
-        input:focus, textarea:focus, select:focus {
+        input:focus,
+        textarea:focus,
+        select:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -283,7 +288,7 @@
             margin-bottom: 20px;
         }
 
-                .warning strong {
+        .warning strong {
             color: #d63384;
         }
 
@@ -306,7 +311,7 @@
 
         .format-btn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
         .copy-success {
@@ -424,6 +429,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -443,7 +449,7 @@
 
     <script>
         // 等待 nostr-tools 加载完成
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             // 检查 nostr-tools 是否加载成功
             if (typeof window.NostrTools === 'undefined') {
                 document.getElementById('app').innerHTML = `
@@ -473,18 +479,18 @@ npm run dev
 
             // 真实的 Nostr 客户端实现
             class RealNostrClient {
-            constructor() {
+                constructor() {
                     // 默认中继列表
                     this.defaultRelays = [
-                    'wss://relay.damus.io',
-                    'wss://nos.lol',
-                    'wss://relay.snort.social',
+                        'wss://relay.damus.io',
+                        'wss://nos.lol',
+                        'wss://relay.snort.social',
                         'wss://relay.nostr.band',
                         'wss://nostr.wine',
                         'wss://relay.nostr.info',
                         'wss://nostr.internal.ikandev.xyz',
-                    'wss://eden.nostr.land'
-                ];
+                        'wss://eden.nostr.land'
+                    ];
 
                     // 推荐中继列表（用于快速添加）
                     this.recommendedRelays = [
@@ -502,18 +508,18 @@ npm run dev
                     this.relays = this.loadRelaysFromStorage();
 
                     this.pool = new SimplePool();
-                this.privateKey = null;
-                this.publicKey = null;
+                    this.privateKey = null;
+                    this.publicKey = null;
                     this.userMetadata = null;
 
                     // 事件种类
-                this.eventKinds = {
-                    METADATA: 0,
-                    TEXT_NOTE: 1,
-                    CONTACT_LIST: 3,
-                    REACTION: 7,
-                    COMMENT: 1111,
-                    LONG_FORM: 30023,
+                    this.eventKinds = {
+                        METADATA: 0,
+                        TEXT_NOTE: 1,
+                        CONTACT_LIST: 3,
+                        REACTION: 7,
+                        COMMENT: 1111,
+                        LONG_FORM: 30023,
                         BOOKMARK: 10003,
                         BOOKMARK_SET: 30003
                     };
@@ -603,8 +609,8 @@ npm run dev
 
                 // 设置用户
                 async setUser(privateKey, publicKey) {
-                this.privateKey = privateKey;
-                this.publicKey = publicKey;
+                    this.privateKey = privateKey;
+                    this.publicKey = publicKey;
 
                     // 验证密钥对 (确保两个密钥都是正确的格式)
                     const derivedPublicKey = getPublicKey(privateKey);
@@ -638,27 +644,27 @@ npm run dev
 
                 // 测试中继连接
                 async testRelayConnection(relayUrl) {
-                return new Promise((resolve, reject) => {
+                    return new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
                             reject(new Error('连接超时'));
                         }, 5000);
 
                         try {
                             console.log(`尝试连接到中继: ${relayUrl}`);
-                    const ws = new WebSocket(relayUrl);
+                            const ws = new WebSocket(relayUrl);
 
-                    ws.onopen = () => {
+                            ws.onopen = () => {
                                 console.log(`中继连接成功: ${relayUrl}`);
                                 clearTimeout(timeout);
                                 ws.close();
                                 resolve();
-                    };
+                            };
 
-                    ws.onerror = (error) => {
+                            ws.onerror = (error) => {
                                 console.log(`中继连接失败: ${relayUrl}`, error);
                                 clearTimeout(timeout);
-                        reject(error);
-                    };
+                                reject(error);
+                            };
 
                         } catch (error) {
                             console.log(`中继连接异常: ${relayUrl}`, error);
@@ -669,18 +675,18 @@ npm run dev
                 }
 
                 // 创建并签名事件
-            createEvent(kind, content, tags = []) {
+                createEvent(kind, content, tags = []) {
                     if (!this.privateKey || !this.publicKey) {
                         throw new Error('用户未设置，无法创建事件');
                     }
 
-                const event = {
-                    kind,
-                    content,
-                    tags,
-                    created_at: Math.floor(Date.now() / 1000),
-                    pubkey: this.publicKey
-                };
+                    const event = {
+                        kind,
+                        content,
+                        tags,
+                        created_at: Math.floor(Date.now() / 1000),
+                        pubkey: this.publicKey
+                    };
 
                     // 使用 finalizeEvent 完成事件签名
                     const signedEvent = finalizeEvent(event, this.privateKey);
@@ -700,8 +706,8 @@ npm run dev
                     return signedEvent;
                 }
 
-                                                // 发布事件 - 使用更健壮的方法
-            async publishEvent(event) {
+                // 发布事件 - 使用更健壮的方法
+                async publishEvent(event) {
                     if (!event.id || !event.sig) {
                         throw new Error('事件未正确签名');
                     }
@@ -726,7 +732,7 @@ npm run dev
                             results.push({ relay, success: true });
                             successCount++;
 
-                                } catch (error) {
+                        } catch (error) {
                             console.warn(`❌ 发布到中继 ${relay} 失败:`, error.message);
                             results.push({ relay, success: false, error: error.message });
                             // 继续尝试下一个中继
@@ -785,77 +791,77 @@ npm run dev
 
                 // 发布文章
                 async publishArticle(title, content, summary = '') {
-                const dTag = 'article_' + Date.now();
-                const event = this.createEvent(
-                    this.eventKinds.LONG_FORM,
-                    content,
-                    [
-                        ['d', dTag],
-                        ['title', title],
+                    const dTag = 'article_' + Date.now();
+                    const event = this.createEvent(
+                        this.eventKinds.LONG_FORM,
+                        content,
+                        [
+                            ['d', dTag],
+                            ['title', title],
                             ['summary', summary],
-                        ['published_at', Math.floor(Date.now() / 1000).toString()]
-                    ]
-                );
+                            ['published_at', Math.floor(Date.now() / 1000).toString()]
+                        ]
+                    );
 
-                return await this.publishEvent(event);
-            }
+                    return await this.publishEvent(event);
+                }
 
                 // 点赞文章
-            async likeArticle(articleId, authorPubkey) {
-                const event = this.createEvent(
-                    this.eventKinds.REACTION,
-                    '+',
-                    [
-                        ['e', articleId],
-                        ['p', authorPubkey]
-                    ]
-                );
+                async likeArticle(articleId, authorPubkey) {
+                    const event = this.createEvent(
+                        this.eventKinds.REACTION,
+                        '+',
+                        [
+                            ['e', articleId],
+                            ['p', authorPubkey]
+                        ]
+                    );
 
-                return await this.publishEvent(event);
-            }
+                    return await this.publishEvent(event);
+                }
 
                 // 收藏文章
-            async bookmarkArticle(articleId, title = '') {
-                const event = this.createEvent(
-                    this.eventKinds.BOOKMARK,
-                    '',
-                    [
-                        ['e', articleId],
-                        ['title', title || '我的收藏']
-                    ]
-                );
+                async bookmarkArticle(articleId, title = '') {
+                    const event = this.createEvent(
+                        this.eventKinds.BOOKMARK,
+                        '',
+                        [
+                            ['e', articleId],
+                            ['title', title || '我的收藏']
+                        ]
+                    );
 
-                return await this.publishEvent(event);
-            }
+                    return await this.publishEvent(event);
+                }
 
                 // 关注作者
-            async followAuthor(authorPubkey, alias = '') {
-                const event = this.createEvent(
-                    this.eventKinds.CONTACT_LIST,
-                    '',
-                    [['p', authorPubkey, '', alias]]
-                );
+                async followAuthor(authorPubkey, alias = '') {
+                    const event = this.createEvent(
+                        this.eventKinds.CONTACT_LIST,
+                        '',
+                        [['p', authorPubkey, '', alias]]
+                    );
 
-                return await this.publishEvent(event);
-            }
+                    return await this.publishEvent(event);
+                }
 
                 // 评论文章
-            async commentOnArticle(articleId, authorPubkey, content) {
-                const articleATag = `30023:${authorPubkey}:${articleId}`;
-                const event = this.createEvent(
-                    this.eventKinds.COMMENT,
-                    content,
-                    [
-                        ['A', articleATag],
-                        ['K', '30023'],
-                        ['P', authorPubkey]
-                    ]
-                );
+                async commentOnArticle(articleId, authorPubkey, content) {
+                    const articleATag = `30023:${authorPubkey}:${articleId}`;
+                    const event = this.createEvent(
+                        this.eventKinds.COMMENT,
+                        content,
+                        [
+                            ['A', articleATag],
+                            ['K', '30023'],
+                            ['P', authorPubkey]
+                        ]
+                    );
 
-                return await this.publishEvent(event);
-            }
+                    return await this.publishEvent(event);
+                }
 
-                                                                // 获取时间线 - 使用更健壮的方法
+                // 获取时间线 - 使用更健壮的方法
                 async getTimeline(limit = 20) {
                     try {
                         console.log(`开始从 ${this.relays.length} 个中继获取时间线数据...`);
@@ -916,7 +922,7 @@ npm run dev
                     }
                 }
 
-                                // 获取特定用户的时间线
+                // 获取特定用户的时间线
                 async getUserTimeline(pubkey, limit = 20) {
                     try {
                         console.log(`获取用户 ${pubkey.substring(0, 16)}... 的时间线`);
@@ -965,7 +971,7 @@ npm run dev
                     }
                 }
 
-                                // 获取关注用户的时间线
+                // 获取关注用户的时间线
                 async getFollowedTimeline(limit = 20) {
                     try {
                         if (!this.publicKey) {
@@ -1064,7 +1070,7 @@ npm run dev
                     });
                 }
 
-                                                // 测试特定公钥的事件
+                // 测试特定公钥的事件
                 async testSpecificPubkey(pubkey) {
                     console.log(`🔍 测试公钥 ${pubkey.substring(0, 16)}... 的事件`);
 
@@ -1098,7 +1104,7 @@ npm run dev
                     }
                 }
 
-                                // 测试特定公钥的 30023 事件
+                // 测试特定公钥的 30023 事件
                 async testSpecificPubkey30023(pubkey) {
                     console.log(`🔍 专门测试公钥 ${pubkey.substring(0, 16)}... 的 30023 事件`);
 
@@ -1150,8 +1156,8 @@ npm run dev
                             });
 
                             if (event) {
-  console.log('it exists indeed on this relay:', event)
-}
+                                console.log('it exists indeed on this relay:', event)
+                            }
 
                             const events = await this.pool.querySync([relay], {
                                 ids: [eventId]
@@ -1200,7 +1206,7 @@ npm run dev
                     return results;
                 }
 
-                                // 测试特定中继的连接和查询
+                // 测试特定中继的连接和查询
                 async testSpecificRelay(relayUrl) {
                     console.log(`🔍 测试中继 ${relayUrl}`);
 
@@ -1229,7 +1235,7 @@ npm run dev
                     }
                 }
 
-                                // 测试特定中继的特定公钥查询
+                // 测试特定中继的特定公钥查询
                 async testSpecificRelayForPubkey(relayUrl, pubkey) {
                     console.log(`🔍 测试中继 ${relayUrl} 对公钥 ${pubkey.substring(0, 16)}... 的查询`);
 
@@ -1287,7 +1293,7 @@ npm run dev
                     }
                 }
 
-                                // 测试时间线查询逻辑
+                // 测试时间线查询逻辑
                 async testTimelineQueryLogic(relayUrl) {
                     console.log(`🔍 测试时间线查询逻辑 - 中继: ${relayUrl}`);
 
@@ -1451,11 +1457,11 @@ npm run dev
                 // 添加中继
                 async addRelay(relayUrl) {
                     if (this.relays.includes(relayUrl)) {
-                    throw new Error('该中继已存在');
-                }
+                        throw new Error('该中继已存在');
+                    }
 
                     await this.testRelayConnection(relayUrl);
-                this.relays.push(relayUrl);
+                    this.relays.push(relayUrl);
                     this.connectionStatus.set(relayUrl, 'connected');
 
                     console.log(`中继添加成功: ${relayUrl}`);
@@ -1470,15 +1476,15 @@ npm run dev
                 }
 
                 // 工具方法
-            truncateKey(key, length = 16) {
-                if (!key) return '';
-                return key.length > length ? key.substring(0, length) + '...' : key;
-            }
+                truncateKey(key, length = 16) {
+                    if (!key) return '';
+                    return key.length > length ? key.substring(0, length) + '...' : key;
+                }
 
-            formatTime(timestamp) {
-                const date = new Date(timestamp * 1000);
-                return date.toLocaleString('zh-CN');
-            }
+                formatTime(timestamp) {
+                    const date = new Date(timestamp * 1000);
+                    return date.toLocaleString('zh-CN');
+                }
 
                 getTagValue(tags, tagName) {
                     const tag = tags.find(t => t[0] === tagName);
@@ -1541,33 +1547,33 @@ npm run dev
                         return true;
                     }
                     return false;
+                }
             }
-        }
 
-        // 应用类
-        class NostrApp {
-            constructor() {
+            // 应用类
+            class NostrApp {
+                constructor() {
                     this.client = new RealNostrClient();
-                this.currentSection = 'auth';
-                this.currentTab = 'create';
-                this.articles = [];
-            }
+                    this.currentSection = 'auth';
+                    this.currentTab = 'create';
+                    this.articles = [];
+                }
 
-            async init() {
-                this.createUI();
-                this.bindEvents();
+                async init() {
+                    this.createUI();
+                    this.bindEvents();
 
-                const savedUser = localStorage.getItem('nostr-user');
-                if (savedUser) {
-                    const user = JSON.parse(savedUser);
+                    const savedUser = localStorage.getItem('nostr-user');
+                    if (savedUser) {
+                        const user = JSON.parse(savedUser);
                         // 注意：私钥需要从 nsec 重新解码
                         if (user.nsec) {
                             try {
                                 const decoded = nip19.decode(user.nsec);
                                 this.client.privateKey = decoded.data;
-                    this.client.publicKey = user.publicKey;
-                    this.showUserInfo(user);
-                    this.showSection('main');
+                                this.client.publicKey = user.publicKey;
+                                this.showUserInfo(user);
+                                this.showSection('main');
                                 // 延迟更新密钥显示，确保 DOM 已加载
                                 setTimeout(() => {
                                     this.updateKeyDisplay();
@@ -1577,16 +1583,16 @@ npm run dev
                                 localStorage.removeItem('nostr-user');
                             }
                         }
+                    }
+
+                    await this.client.initializeRelays();
+                    this.updateRelayList();
+                    this.updateQuickAddRelays();
                 }
 
-                await this.client.initializeRelays();
-                this.updateRelayList();
-                    this.updateQuickAddRelays();
-            }
-
-            createUI() {
-                const app = document.getElementById('app');
-                app.innerHTML = `
+                createUI() {
+                    const app = document.getElementById('app');
+                    app.innerHTML = `
                     <div id="auth-section" class="section" style="display: ${this.currentSection === 'auth' ? 'block' : 'none'};">
                         <h2>欢迎使用 Nostr Demo</h2>
 
@@ -1742,154 +1748,154 @@ npm run dev
                         </div>
                     </div>
                 `;
-            }
+                }
 
-            bindEvents() {
-                // 标签切换
-                document.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('tab')) {
-                        this.switchTab(e.target.dataset.tab);
-                    }
-                });
+                bindEvents() {
+                    // 标签切换
+                    document.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('tab')) {
+                            this.switchTab(e.target.dataset.tab);
+                        }
+                    });
 
-                // 创建账号
-                document.getElementById('createAccount').addEventListener('click', async () => {
-                    await this.handleCreateAccount();
-                });
+                    // 创建账号
+                    document.getElementById('createAccount').addEventListener('click', async () => {
+                        await this.handleCreateAccount();
+                    });
 
-                // 导入账号
-                document.getElementById('importAccount').addEventListener('click', async () => {
-                    await this.handleImportAccount();
-                });
+                    // 导入账号
+                    document.getElementById('importAccount').addEventListener('click', async () => {
+                        await this.handleImportAccount();
+                    });
 
-                // 发布文章
-                document.getElementById('publishArticle').addEventListener('click', async () => {
-                    await this.handlePublishArticle();
-                });
+                    // 发布文章
+                    document.getElementById('publishArticle').addEventListener('click', async () => {
+                        await this.handlePublishArticle();
+                    });
 
-                // 刷新时间线
-                document.getElementById('refreshTimeline').addEventListener('click', async () => {
-                    await this.handleRefreshTimeline();
+                    // 刷新时间线
+                    document.getElementById('refreshTimeline').addEventListener('click', async () => {
+                        await this.handleRefreshTimeline();
                     });
 
                     // 调试中继
-                                    document.getElementById('debugRelays').addEventListener('click', async () => {
-                    await this.handleDebugRelays();
-                });
+                    document.getElementById('debugRelays').addEventListener('click', async () => {
+                        await this.handleDebugRelays();
+                    });
 
-                document.getElementById('testSpecificPubkey').addEventListener('click', async () => {
-                    const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
-                    if (pubkey) {
-                        await this.client.testSpecificPubkey(pubkey);
-                    }
-                });
-
-                document.getElementById('testSpecificRelay').addEventListener('click', async () => {
-                    const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
-                    if (relayUrl) {
-                        await this.client.testSpecificRelay(relayUrl);
-                    }
-                });
-
-                document.getElementById('test30023Events').addEventListener('click', async () => {
-                    const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
-                    if (pubkey) {
-                        await this.client.testSpecificPubkey30023(pubkey);
-                    }
-                });
-
-                document.getElementById('queryEventById').addEventListener('click', async () => {
-                    const eventId = prompt('请输入要查询的事件 ID (hex 格式):', '5a30e25ce5618461faca1408cb81699896b271d7ec27c128e53056921e5f3df7');
-                    if (eventId) {
-                        try {
-                            const results = await this.client.queryEventById(eventId);
-                            console.log(`✅ 根据 ID 查询完成:`, results);
-                        } catch (error) {
-                            console.error(`❌ 根据 ID 查询失败:`, error.message);
+                    document.getElementById('testSpecificPubkey').addEventListener('click', async () => {
+                        const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
+                        if (pubkey) {
+                            await this.client.testSpecificPubkey(pubkey);
                         }
-                    }
-                });
+                    });
 
-                document.getElementById('testSpecificRelayForPubkey').addEventListener('click', async () => {
-                    const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
-                    const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
-                    if (relayUrl && pubkey) {
-                        await this.client.testSpecificRelayForPubkey(relayUrl, pubkey);
-                    }
-                });
-
-                document.getElementById('testRawWebSocket').addEventListener('click', async () => {
-                    const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
-                    const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
-                    if (relayUrl && pubkey) {
-                        try {
-                            const eventCount = await this.client.testWithRawWebSocket(relayUrl, pubkey);
-                            console.log(`✅ 原生 WebSocket 测试完成，收到 ${eventCount} 个事件`);
-                        } catch (error) {
-                            console.error(`❌ 原生 WebSocket 测试失败:`, error.message);
+                    document.getElementById('testSpecificRelay').addEventListener('click', async () => {
+                        const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
+                        if (relayUrl) {
+                            await this.client.testSpecificRelay(relayUrl);
                         }
-                    }
-                });
+                    });
 
-                document.getElementById('testTimelineLogic').addEventListener('click', async () => {
-                    const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
-                    if (relayUrl) {
-                        try {
-                            const result = await this.client.testTimelineQueryLogic(relayUrl);
-                            console.log(`✅ 时间线逻辑测试完成:`, result);
-                        } catch (error) {
-                            console.error(`❌ 时间线逻辑测试失败:`, error.message);
+                    document.getElementById('test30023Events').addEventListener('click', async () => {
+                        const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
+                        if (pubkey) {
+                            await this.client.testSpecificPubkey30023(pubkey);
                         }
-                    }
-                });
+                    });
 
-                // 开发者模式切换
-                document.getElementById('toggleDevMode').addEventListener('click', () => {
-                    this.toggleDevMode();
-                });
+                    document.getElementById('queryEventById').addEventListener('click', async () => {
+                        const eventId = prompt('请输入要查询的事件 ID (hex 格式):', '5a30e25ce5618461faca1408cb81699896b271d7ec27c128e53056921e5f3df7');
+                        if (eventId) {
+                            try {
+                                const results = await this.client.queryEventById(eventId);
+                                console.log(`✅ 根据 ID 查询完成:`, results);
+                            } catch (error) {
+                                console.error(`❌ 根据 ID 查询失败:`, error.message);
+                            }
+                        }
+                    });
 
-                // 添加中继
-                document.getElementById('addRelay').addEventListener('click', async () => {
-                    await this.handleAddRelay();
-                });
+                    document.getElementById('testSpecificRelayForPubkey').addEventListener('click', async () => {
+                        const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
+                        const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
+                        if (relayUrl && pubkey) {
+                            await this.client.testSpecificRelayForPubkey(relayUrl, pubkey);
+                        }
+                    });
+
+                    document.getElementById('testRawWebSocket').addEventListener('click', async () => {
+                        const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
+                        const pubkey = prompt('请输入要测试的公钥 (hex 格式):', '98496f39197bb0da9b8d647560e3d1a96513a3642a3653836543525a56b8f2b8');
+                        if (relayUrl && pubkey) {
+                            try {
+                                const eventCount = await this.client.testWithRawWebSocket(relayUrl, pubkey);
+                                console.log(`✅ 原生 WebSocket 测试完成，收到 ${eventCount} 个事件`);
+                            } catch (error) {
+                                console.error(`❌ 原生 WebSocket 测试失败:`, error.message);
+                            }
+                        }
+                    });
+
+                    document.getElementById('testTimelineLogic').addEventListener('click', async () => {
+                        const relayUrl = prompt('请输入要测试的中继 URL:', 'wss://nostr.internal.ikandev.xyz');
+                        if (relayUrl) {
+                            try {
+                                const result = await this.client.testTimelineQueryLogic(relayUrl);
+                                console.log(`✅ 时间线逻辑测试完成:`, result);
+                            } catch (error) {
+                                console.error(`❌ 时间线逻辑测试失败:`, error.message);
+                            }
+                        }
+                    });
+
+                    // 开发者模式切换
+                    document.getElementById('toggleDevMode').addEventListener('click', () => {
+                        this.toggleDevMode();
+                    });
+
+                    // 添加中继
+                    document.getElementById('addRelay').addEventListener('click', async () => {
+                        await this.handleAddRelay();
+                    });
 
                     // 快速添加中继按钮会在 updateQuickAddRelays 中动态绑定
 
-                // 文章操作
-                document.addEventListener('click', async (e) => {
-                    if (e.target.classList.contains('like-btn')) {
-                        await this.handleLikeArticle(e.target);
-                    }
-                    if (e.target.classList.contains('bookmark-btn')) {
-                        await this.handleBookmarkArticle(e.target);
-                    }
-                    if (e.target.classList.contains('follow-btn')) {
-                        await this.handleFollowAuthor(e.target);
-                    }
-                    if (e.target.classList.contains('comment-btn')) {
-                        await this.handleCommentArticle(e.target);
-                    }
-                    if (e.target.classList.contains('show-json-btn')) {
-                        const eventId = e.target.dataset.eventId;
-                        this.showEventJson(eventId);
-                    }
-                    if (e.target.classList.contains('close-json-btn')) {
-                        const eventId = e.target.dataset.eventId;
-                        this.hideEventJson(eventId);
-                    }
-                    if (e.target.classList.contains('copy-json-btn')) {
-                        const eventId = e.target.dataset.eventId;
-                        this.copyEventJson(eventId);
-                    }
-                });
+                    // 文章操作
+                    document.addEventListener('click', async (e) => {
+                        if (e.target.classList.contains('like-btn')) {
+                            await this.handleLikeArticle(e.target);
+                        }
+                        if (e.target.classList.contains('bookmark-btn')) {
+                            await this.handleBookmarkArticle(e.target);
+                        }
+                        if (e.target.classList.contains('follow-btn')) {
+                            await this.handleFollowAuthor(e.target);
+                        }
+                        if (e.target.classList.contains('comment-btn')) {
+                            await this.handleCommentArticle(e.target);
+                        }
+                        if (e.target.classList.contains('show-json-btn')) {
+                            const eventId = e.target.dataset.eventId;
+                            this.showEventJson(eventId);
+                        }
+                        if (e.target.classList.contains('close-json-btn')) {
+                            const eventId = e.target.dataset.eventId;
+                            this.hideEventJson(eventId);
+                        }
+                        if (e.target.classList.contains('copy-json-btn')) {
+                            const eventId = e.target.dataset.eventId;
+                            this.copyEventJson(eventId);
+                        }
+                    });
 
-                // 点击模态框背景关闭
-                document.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('json-modal')) {
-                        const eventId = e.target.id.replace('json-modal-', '');
-                        this.hideEventJson(eventId);
-                    }
-                });
+                    // 点击模态框背景关闭
+                    document.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('json-modal')) {
+                            const eventId = e.target.id.replace('json-modal-', '');
+                            this.hideEventJson(eventId);
+                        }
+                    });
 
                     // 密钥管理功能
                     this.bindKeyManagementEvents();
@@ -1916,127 +1922,127 @@ npm run dev
                     // 切换私钥显示
                     document.getElementById('toggle-private-key').addEventListener('click', () => {
                         this.togglePrivateKeyVisibility();
-                });
-            }
-
-            switchTab(tabType) {
-                const tabs = document.querySelectorAll('.tab');
-                tabs.forEach(tab => {
-                    tab.classList.remove('active');
-                    if (tab.dataset.tab === tabType) {
-                        tab.classList.add('active');
-                    }
-                });
-
-                const contents = document.querySelectorAll('.tab-content');
-                contents.forEach(content => {
-                    content.classList.remove('active');
-                });
-
-                const activeContent = document.getElementById(tabType + '-tab');
-                if (activeContent) {
-                    activeContent.classList.add('active');
-                }
-            }
-
-            showSection(sectionName) {
-                const sections = ['auth-section', 'main-section'];
-                sections.forEach(section => {
-                    const element = document.getElementById(section);
-                    if (element) {
-                        element.style.display = 'none';
-                    }
-                });
-
-                const activeSection = document.getElementById(sectionName + '-section');
-                if (activeSection) {
-                    activeSection.style.display = 'block';
+                    });
                 }
 
-                this.currentSection = sectionName;
-            }
+                switchTab(tabType) {
+                    const tabs = document.querySelectorAll('.tab');
+                    tabs.forEach(tab => {
+                        tab.classList.remove('active');
+                        if (tab.dataset.tab === tabType) {
+                            tab.classList.add('active');
+                        }
+                    });
 
-            showUserInfo(user) {
-                document.getElementById('user-name').textContent = user.name || '未设置';
-                document.getElementById('user-pubkey').textContent = user.npub;
-                document.getElementById('user-about').textContent = user.about || '未设置';
+                    const contents = document.querySelectorAll('.tab-content');
+                    contents.forEach(content => {
+                        content.classList.remove('active');
+                    });
+
+                    const activeContent = document.getElementById(tabType + '-tab');
+                    if (activeContent) {
+                        activeContent.classList.add('active');
+                    }
+                }
+
+                showSection(sectionName) {
+                    const sections = ['auth-section', 'main-section'];
+                    sections.forEach(section => {
+                        const element = document.getElementById(section);
+                        if (element) {
+                            element.style.display = 'none';
+                        }
+                    });
+
+                    const activeSection = document.getElementById(sectionName + '-section');
+                    if (activeSection) {
+                        activeSection.style.display = 'block';
+                    }
+
+                    this.currentSection = sectionName;
+                }
+
+                showUserInfo(user) {
+                    document.getElementById('user-name').textContent = user.name || '未设置';
+                    document.getElementById('user-pubkey').textContent = user.npub;
+                    document.getElementById('user-about').textContent = user.about || '未设置';
 
                     // 更新密钥显示
                     this.updateKeyDisplay();
-            }
-
-            async handleCreateAccount() {
-                try {
-                    this.showStatus('创建账号中...', 'info');
-
-                    const name = document.getElementById('userName').value;
-                    const about = document.getElementById('userAbout').value;
-
-                    const user = await this.client.createAccount(name, about);
-
-                    localStorage.setItem('nostr-user', JSON.stringify(user));
-
-                    this.showStatus('账号创建成功！', 'success');
-                    this.showUserInfo(user);
-                    this.showSection('main');
-
-                } catch (error) {
-                    this.showStatus('创建账号失败: ' + error.message, 'error');
                 }
-            }
 
-            async handleImportAccount() {
-                try {
-                    this.showStatus('导入账号中...', 'info');
+                async handleCreateAccount() {
+                    try {
+                        this.showStatus('创建账号中...', 'info');
 
-                    const nsec = document.getElementById('nsecInput').value;
-                    const user = await this.client.importAccount(nsec);
+                        const name = document.getElementById('userName').value;
+                        const about = document.getElementById('userAbout').value;
 
-                    localStorage.setItem('nostr-user', JSON.stringify(user));
+                        const user = await this.client.createAccount(name, about);
 
-                    this.showStatus('账号导入成功！', 'success');
-                    this.showUserInfo(user);
-                    this.showSection('main');
+                        localStorage.setItem('nostr-user', JSON.stringify(user));
 
-                } catch (error) {
-                    this.showStatus('导入账号失败: ' + error.message, 'error');
+                        this.showStatus('账号创建成功！', 'success');
+                        this.showUserInfo(user);
+                        this.showSection('main');
+
+                    } catch (error) {
+                        this.showStatus('创建账号失败: ' + error.message, 'error');
+                    }
                 }
-            }
 
-            async handlePublishArticle() {
-                try {
-                    this.showStatus('发布文章中...', 'info');
+                async handleImportAccount() {
+                    try {
+                        this.showStatus('导入账号中...', 'info');
 
-                    const title = document.getElementById('articleTitle').value;
-                    const content = document.getElementById('articleContent').value;
+                        const nsec = document.getElementById('nsecInput').value;
+                        const user = await this.client.importAccount(nsec);
 
-                    if (!title || !content) {
-                        this.showStatus('请填写文章标题和内容', 'error');
-                        return;
+                        localStorage.setItem('nostr-user', JSON.stringify(user));
+
+                        this.showStatus('账号导入成功！', 'success');
+                        this.showUserInfo(user);
+                        this.showSection('main');
+
+                    } catch (error) {
+                        this.showStatus('导入账号失败: ' + error.message, 'error');
                     }
+                }
 
-                                            const result = await this.client.publishArticle(title, content);
+                async handlePublishArticle() {
+                    try {
+                        this.showStatus('发布文章中...', 'info');
 
-                    if (result.success) {
-                        this.showStatus(`文章发布成功！已发送到 ${result.relayCount}/${this.client.relays.length} 个中继`, 'success');
-                    } else {
-                        this.showStatus(`文章发布失败: ${result.error}`, 'error');
-                    }
+                        const title = document.getElementById('articleTitle').value;
+                        const content = document.getElementById('articleContent').value;
 
-                    // 清空表单
-                    document.getElementById('articleTitle').value = '';
-                    document.getElementById('articleContent').value = '';
+                        if (!title || !content) {
+                            this.showStatus('请填写文章标题和内容', 'error');
+                            return;
+                        }
 
-                    // 添加到本地列表
+                        const result = await this.client.publishArticle(title, content);
+
+                        if (result.success) {
+                            this.showStatus(`文章发布成功！已发送到 ${result.relayCount}/${this.client.relays.length} 个中继`, 'success');
+                        } else {
+                            this.showStatus(`文章发布失败: ${result.error}`, 'error');
+                        }
+
+                        // 清空表单
+                        document.getElementById('articleTitle').value = '';
+                        document.getElementById('articleContent').value = '';
+
+                        // 添加到本地列表
                         this.articles.unshift(result.event);
-                    this.updateTimeline();
+                        this.updateTimeline();
 
-                } catch (error) {
-                    this.showStatus('发布文章失败: ' + error.message, 'error');
+                    } catch (error) {
+                        this.showStatus('发布文章失败: ' + error.message, 'error');
+                    }
                 }
-            }
 
-            async handleRefreshTimeline() {
+                async handleRefreshTimeline() {
                     try {
                         const timelineType = document.getElementById('timelineType').value;
                         this.showStatus(`正在获取${this.getTimelineTypeName(timelineType)}...`, 'info');
@@ -2072,7 +2078,7 @@ npm run dev
                         }
 
                         this.articles = timeline;
-                this.updateTimeline();
+                        this.updateTimeline();
 
                         if (timeline.length === 0) {
                             this.showStatus(`未找到任何文章`, 'info');
@@ -2120,31 +2126,31 @@ npm run dev
                         case 'user': return '我的文章';
                         default: return '时间线';
                     }
-            }
+                }
 
-            async handleAddRelay() {
-                try {
-                    const relayUrl = document.getElementById('relayUrl').value;
+                async handleAddRelay() {
+                    try {
+                        const relayUrl = document.getElementById('relayUrl').value;
 
-                    if (!relayUrl) {
-                        this.showStatus('请输入中继地址', 'error');
-                        return;
-                    }
+                        if (!relayUrl) {
+                            this.showStatus('请输入中继地址', 'error');
+                            return;
+                        }
 
-                    this.showStatus('连接中继中...', 'info');
+                        this.showStatus('连接中继中...', 'info');
 
-                    await this.client.addRelay(relayUrl);
+                        await this.client.addRelay(relayUrl);
 
-                    this.showStatus('中继连接成功！', 'success');
-                    this.updateRelayList();
+                        this.showStatus('中继连接成功！', 'success');
+                        this.updateRelayList();
                         this.updateQuickAddRelays(); // 更新快速添加列表
 
-                    document.getElementById('relayUrl').value = '';
+                        document.getElementById('relayUrl').value = '';
 
-                } catch (error) {
-                    this.showStatus('连接中继失败: ' + error.message, 'error');
+                    } catch (error) {
+                        this.showStatus('连接中继失败: ' + error.message, 'error');
+                    }
                 }
-            }
 
                 async handleQuickAddRelay(relayUrl) {
                     try {
@@ -2161,7 +2167,7 @@ npm run dev
                     }
                 }
 
-                                async handleRemoveRelay(relayUrl) {
+                async handleRemoveRelay(relayUrl) {
                     try {
                         if (confirm(`确定要移除中继 ${relayUrl} 吗？`)) {
                             const success = this.client.removeRelay(relayUrl);
@@ -2245,86 +2251,86 @@ npm run dev
                     } catch (error) {
                         console.error('调试中继失败:', error);
                         this.showStatus('调试中继失败: ' + error.message, 'error');
-                }
-            }
-
-            async handleLikeArticle(button) {
-                try {
-                    const articleId = button.dataset.articleId;
-                    const authorPubkey = button.dataset.authorPubkey;
-
-                    await this.client.likeArticle(articleId, authorPubkey);
-
-                    button.classList.add('active');
-                    button.textContent = '已点赞';
-
-                    this.showStatus('点赞成功！', 'success');
-
-                } catch (error) {
-                    this.showStatus('点赞失败: ' + error.message, 'error');
-                }
-            }
-
-            async handleBookmarkArticle(button) {
-                try {
-                    const articleId = button.dataset.articleId;
-                    const title = button.dataset.title;
-
-                    await this.client.bookmarkArticle(articleId, title);
-
-                    button.classList.add('active');
-                    button.textContent = '已收藏';
-
-                    this.showStatus('收藏成功！', 'success');
-
-                } catch (error) {
-                    this.showStatus('收藏失败: ' + error.message, 'error');
-                }
-            }
-
-            async handleFollowAuthor(button) {
-                try {
-                    const authorPubkey = button.dataset.authorPubkey;
-                    const authorName = button.dataset.authorName;
-
-                    await this.client.followAuthor(authorPubkey, authorName);
-
-                    button.classList.add('active');
-                    button.textContent = '已关注';
-
-                    this.showStatus('关注成功！', 'success');
-
-                } catch (error) {
-                    this.showStatus('关注失败: ' + error.message, 'error');
-                }
-            }
-
-            async handleCommentArticle(button) {
-                try {
-                    const articleId = button.dataset.articleId;
-                    const authorPubkey = button.dataset.authorPubkey;
-
-                    const content = prompt('请输入评论内容:');
-                    if (!content) return;
-
-                    await this.client.commentOnArticle(articleId, authorPubkey, content);
-
-                    this.showStatus('评论发布成功！', 'success');
-
-                } catch (error) {
-                    this.showStatus('发布评论失败: ' + error.message, 'error');
-                }
-            }
-
-            updateTimeline() {
-                const timelineContent = document.getElementById('timeline-content');
-
-                if (this.articles.length === 0) {
-                    timelineContent.innerHTML = '<div class="status info">暂无文章，请发布文章或连接到更多中继</div>';
-                    return;
+                    }
                 }
 
-                let html = '';
+                async handleLikeArticle(button) {
+                    try {
+                        const articleId = button.dataset.articleId;
+                        const authorPubkey = button.dataset.authorPubkey;
+
+                        await this.client.likeArticle(articleId, authorPubkey);
+
+                        button.classList.add('active');
+                        button.textContent = '已点赞';
+
+                        this.showStatus('点赞成功！', 'success');
+
+                    } catch (error) {
+                        this.showStatus('点赞失败: ' + error.message, 'error');
+                    }
+                }
+
+                async handleBookmarkArticle(button) {
+                    try {
+                        const articleId = button.dataset.articleId;
+                        const title = button.dataset.title;
+
+                        await this.client.bookmarkArticle(articleId, title);
+
+                        button.classList.add('active');
+                        button.textContent = '已收藏';
+
+                        this.showStatus('收藏成功！', 'success');
+
+                    } catch (error) {
+                        this.showStatus('收藏失败: ' + error.message, 'error');
+                    }
+                }
+
+                async handleFollowAuthor(button) {
+                    try {
+                        const authorPubkey = button.dataset.authorPubkey;
+                        const authorName = button.dataset.authorName;
+
+                        await this.client.followAuthor(authorPubkey, authorName);
+
+                        button.classList.add('active');
+                        button.textContent = '已关注';
+
+                        this.showStatus('关注成功！', 'success');
+
+                    } catch (error) {
+                        this.showStatus('关注失败: ' + error.message, 'error');
+                    }
+                }
+
+                async handleCommentArticle(button) {
+                    try {
+                        const articleId = button.dataset.articleId;
+                        const authorPubkey = button.dataset.authorPubkey;
+
+                        const content = prompt('请输入评论内容:');
+                        if (!content) return;
+
+                        await this.client.commentOnArticle(articleId, authorPubkey, content);
+
+                        this.showStatus('评论发布成功！', 'success');
+
+                    } catch (error) {
+                        this.showStatus('发布评论失败: ' + error.message, 'error');
+                    }
+                }
+
+                updateTimeline() {
+                    const timelineContent = document.getElementById('timeline-content');
+
+                    if (this.articles.length === 0) {
+                        timelineContent.innerHTML = '<div class="status info">暂无文章，请发布文章或连接到更多中继</div>';
+                        return;
+                    }
+
+                    let html = '';
                     this.articles.forEach(event => {
                         const timeStr = this.client.formatTime(event.created_at);
                         let title = '';
@@ -2361,7 +2367,7 @@ npm run dev
                                 title = `事件类型 ${event.kind}`;
                         }
 
-                    html += `
+                        html += `
                         <div class="article-item">
                             <div class="article-title">${eventType} - ${this.escapeHtml(title)}</div>
                             <div class="article-content">${this.escapeHtml(content.substring(0, 200))}${content.length > 200 ? '...' : ''}</div>
@@ -2404,18 +2410,18 @@ npm run dev
                             </div>
                         </div>
                     `;
-                });
+                    });
 
-                timelineContent.innerHTML = html;
-            }
+                    timelineContent.innerHTML = html;
+                }
 
-            updateRelayList() {
-                const relayItems = document.getElementById('relay-items');
-                const relays = this.client.getRelays();
+                updateRelayList() {
+                    const relayItems = document.getElementById('relay-items');
+                    const relays = this.client.getRelays();
 
-                let html = '';
-                relays.forEach(relay => {
-                    html += `
+                    let html = '';
+                    relays.forEach(relay => {
+                        html += `
                         <div class="relay-item">
                             <div>
                                 <span class="relay-status ${relay.connected ? 'connected' : 'disconnected'}"></span>
@@ -2429,9 +2435,9 @@ npm run dev
                                 </div>
                         </div>
                     `;
-                });
+                    });
 
-                relayItems.innerHTML = html;
+                    relayItems.innerHTML = html;
 
                     // 绑定移除按钮事件
                     document.querySelectorAll('.remove-relay-btn').forEach(btn => {
@@ -2469,70 +2475,70 @@ npm run dev
                             await this.handleQuickAddRelay(relayUrl);
                         });
                     });
-            }
-
-            escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
-
-            showStatus(message, type) {
-                const statusDiv = document.getElementById('status-message');
-                statusDiv.className = `status ${type}`;
-                statusDiv.textContent = message;
-                statusDiv.style.display = 'block';
-
-                setTimeout(() => {
-                    statusDiv.style.display = 'none';
-                }, 3000);
-            }
-
-            // 显示事件 JSON
-            showEventJson(eventId) {
-                const modal = document.getElementById(`json-modal-${eventId}`);
-                if (modal) {
-                    modal.style.display = 'flex';
                 }
-            }
 
-            // 隐藏事件 JSON
-            hideEventJson(eventId) {
-                const modal = document.getElementById(`json-modal-${eventId}`);
-                if (modal) {
-                    modal.style.display = 'none';
+                escapeHtml(text) {
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
                 }
-            }
 
-                        // 复制 JSON 内容
-            copyEventJson(eventId) {
-                const textarea = document.getElementById(`json-content-${eventId}`);
-                if (textarea) {
-                    textarea.select();
-                    textarea.setSelectionRange(0, 99999); // 兼容移动端
+                showStatus(message, type) {
+                    const statusDiv = document.getElementById('status-message');
+                    statusDiv.className = `status ${type}`;
+                    statusDiv.textContent = message;
+                    statusDiv.style.display = 'block';
 
-                    try {
-                        document.execCommand('copy');
-                        this.showStatus('JSON 已复制到剪贴板', 'success');
-                    } catch (err) {
-                        this.showStatus('复制失败，请手动复制', 'error');
+                    setTimeout(() => {
+                        statusDiv.style.display = 'none';
+                    }, 3000);
+                }
+
+                // 显示事件 JSON
+                showEventJson(eventId) {
+                    const modal = document.getElementById(`json-modal-${eventId}`);
+                    if (modal) {
+                        modal.style.display = 'flex';
                     }
                 }
-            }
 
-            // 切换开发者模式
-            toggleDevMode() {
-                const app = document.getElementById('app');
-                const isDevMode = app.classList.contains('dev-mode');
-
-                if (isDevMode) {
-                    app.classList.remove('dev-mode');
-                    this.showStatus('开发者模式已关闭', 'info');
-                } else {
-                    app.classList.add('dev-mode');
-                    this.showStatus('开发者模式已开启', 'success');
+                // 隐藏事件 JSON
+                hideEventJson(eventId) {
+                    const modal = document.getElementById(`json-modal-${eventId}`);
+                    if (modal) {
+                        modal.style.display = 'none';
+                    }
                 }
-            }
+
+                // 复制 JSON 内容
+                copyEventJson(eventId) {
+                    const textarea = document.getElementById(`json-content-${eventId}`);
+                    if (textarea) {
+                        textarea.select();
+                        textarea.setSelectionRange(0, 99999); // 兼容移动端
+
+                        try {
+                            document.execCommand('copy');
+                            this.showStatus('JSON 已复制到剪贴板', 'success');
+                        } catch (err) {
+                            this.showStatus('复制失败，请手动复制', 'error');
+                        }
+                    }
+                }
+
+                // 切换开发者模式
+                toggleDevMode() {
+                    const app = document.getElementById('app');
+                    const isDevMode = app.classList.contains('dev-mode');
+
+                    if (isDevMode) {
+                        app.classList.remove('dev-mode');
+                        this.showStatus('开发者模式已关闭', 'info');
+                    } else {
+                        app.classList.add('dev-mode');
+                        this.showStatus('开发者模式已开启', 'success');
+                    }
+                }
 
                 // 密钥管理相关方法
                 switchKeyFormat(format) {
@@ -2633,13 +2639,14 @@ npm run dev
                             privateKeyDisplay.value = user.nsec;
                         }
                     }
+                }
             }
-        }
 
-        // 启动应用
-        const app = new NostrApp();
-        app.init();
+            // 启动应用
+            const app = new NostrApp();
+            app.init();
         });
     </script>
 </body>
+
 </html>
