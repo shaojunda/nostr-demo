@@ -1891,13 +1891,15 @@ npm run dev
                             const eventId = e.target.dataset.eventId;
                             this.copyEventJson(eventId);
                         }
-                        // 文章点击事件
-                        if (e.target.closest('.article-item') && e.target.closest('.article-item').dataset.articleId) {
-                            // 如果点击的是按钮，不进入文章详情页
-                            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
-                                return;
-                            }
-                            const articleId = e.target.closest('.article-item').dataset.articleId;
+                        // 文章标题点击事件
+                        if (e.target.classList.contains('article-title') && e.target.dataset.articleId) {
+                            const articleId = e.target.dataset.articleId;
+                            await this.showArticleViewer(articleId);
+                        }
+
+                        // 详情按钮点击事件
+                        if (e.target.classList.contains('view-detail-btn') && e.target.dataset.articleId) {
+                            const articleId = e.target.dataset.articleId;
                             await this.showArticleViewer(articleId);
                         }
                     });
@@ -1958,6 +1960,48 @@ npm run dev
                     const activeContent = document.getElementById(tabType + '-tab');
                     if (activeContent) {
                         activeContent.classList.add('active');
+                    }
+
+                    // 如果切换到非时间线tab，确保文章查看器被隐藏
+                    if (tabType !== 'timeline') {
+                        const viewer = document.getElementById('article-viewer');
+                        if (viewer && viewer.style.display === 'block') {
+                            viewer.style.display = 'none';
+                        }
+
+                        // 隐藏时间线tab，避免显示时间线类型选择器
+                        const timelineTab = document.getElementById('timeline-tab');
+                        if (timelineTab) {
+                            timelineTab.style.display = 'none';
+                        }
+
+                        // 清空时间线内容，避免在其他tab中显示
+                        const timelineContent = document.getElementById('timeline-content');
+                        if (timelineContent) {
+                            timelineContent.innerHTML = '';
+                        }
+                    } else {
+                        // 如果切换到时间线tab，显示时间线tab并重新显示时间线内容
+                        const timelineTab = document.getElementById('timeline-tab');
+                        if (timelineTab) {
+                            timelineTab.style.display = 'block';
+                        }
+
+                        // 重新显示时间线内容
+                        if (this.articles && this.articles.length > 0) {
+                            this.updateTimeline();
+                        } else {
+                            // 如果没有文章数据，显示默认提示
+                            const timelineContent = document.getElementById('timeline-content');
+                            if (timelineContent) {
+                                timelineContent.innerHTML = `
+                                    <div class="status info">
+                                        <strong>时间线</strong><br>
+                                        点击"刷新时间线"按钮获取最新文章
+                                    </div>
+                                `;
+                            }
+                        }
                     }
                 }
 
@@ -2407,8 +2451,15 @@ npm run dev
                         }
 
                         html += `
-                        <div class="article-item" data-article-id="${event.id}" style="cursor: pointer;">
-                            <div class="article-title">${eventType} - ${this.escapeHtml(title)}</div>
+                        <div class="article-item" data-article-id="${event.id}">
+                            <div class="article-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div class="article-title" style="cursor: pointer; color: #667eea; font-weight: 600; flex: 1;" data-article-id="${event.id}">
+                                    ${eventType} - ${this.escapeHtml(title)}
+                                </div>
+                                <button class="view-detail-btn" data-article-id="${event.id}" style="background: #17a2b8; margin-left: 10px;">
+                                    📖 详情
+                                </button>
+                            </div>
                             <div class="article-content">${this.escapeHtml(content.substring(0, 200))}${content.length > 200 ? '...' : ''}</div>
                             <div class="article-meta">
                                 作者: ${this.client.truncateKey(event.pubkey)} |
@@ -2976,6 +3027,28 @@ npm run dev
                         document.getElementById('timeline-tab').style.display = 'block';
                     };
 
+                    // 确保tab切换功能在文章详情页面也能正常工作
+                    // 重新绑定tab切换事件监听器
+                    document.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('tab')) {
+                            const tabType = e.target.dataset.tab;
+
+                            // 如果当前在文章详情页面，先返回时间线
+                            if (viewer.style.display === 'block') {
+                                viewer.style.display = 'none';
+                                document.getElementById('timeline-tab').style.display = 'block';
+                            }
+
+                            // 使用 setTimeout 确保 DOM 更新后再切换tab
+                            setTimeout(() => {
+                                this.switchTab(tabType);
+                                if (tabType === 'relays') {
+                                    this.updateRelayList();
+                                }
+                            }, 0);
+                        }
+                    });
+
                     // 绑定加载更多
                     document.getElementById('load-more-comments').onclick = loadComments;
 
@@ -3014,25 +3087,31 @@ npm run dev
 
                     // 分类评论：根评论 vs 回复评论
                     this.comments.forEach(c => {
-                        const parentId = (c.tags.find(t => t[0] === 'e') || [])[1];
-                        if (parentId && commentMap.has(parentId)) {
-                            const currentComment = commentMap.get(c.id);
-                            currentComment.isReply = true;
-                            currentComment.parentId = parentId;
+                        const eTag = c.tags.find(t => t[0] === 'e');
+                        const aTag = c.tags.find(t => t[0] === 'A');
 
-                            // 设置回复目标信息
-                            const parentComment = commentMap.get(parentId);
-                            if (parentComment) {
-                                currentComment.replyToAuthor = parentComment.pubkey;
-                                currentComment.replyToContent = parentComment.content.substring(0, 50) + '...';
-                            }
+                        if (eTag && aTag) {
+                            const eventId = eTag[1];
+                            const articleATag = aTag[1];
 
-                            allReplies.push(currentComment);
-                        } else {
-                            // 检查是否是对文章的直接评论（包含 A 标签）
-                            const hasArticleTag = c.tags.some(tag => tag[0] === 'A');
-                            if (hasArticleTag) {
+                            // 检查 e tag 是否指向文章ID
+                            if (eventId === article.id) {
+                                // e tag 指向文章ID，这是根评论
                                 rootComments.push(commentMap.get(c.id));
+                            } else {
+                                // e tag 指向其他评论ID，这是回复评论
+                                const currentComment = commentMap.get(c.id);
+                                currentComment.isReply = true;
+                                currentComment.parentId = eventId;
+
+                                // 设置回复目标信息
+                                const parentComment = commentMap.get(eventId);
+                                if (parentComment) {
+                                    currentComment.replyToAuthor = parentComment.pubkey;
+                                    currentComment.replyToContent = parentComment.content.substring(0, 50) + '...';
+                                }
+
+                                allReplies.push(currentComment);
                             }
                         }
                     });
@@ -3042,9 +3121,24 @@ npm run dev
 
                     // 找到每个回复应该归属的根评论
                     allReplies.forEach(reply => {
-                        const rootComment = this.findRootComment(reply, commentMap, this.comments);
+                        console.log('🔍 处理回复:', {
+                            replyId: reply.id,
+                            replyContent: reply.content,
+                            parentId: reply.parentId
+                        });
+
+                        const rootComment = this.findRootComment(reply, commentMap, this.comments, article);
                         if (rootComment) {
+                            console.log('✅ 找到根评论:', {
+                                rootId: rootComment.id,
+                                rootContent: rootComment.content
+                            });
                             rootComment.children.push(reply);
+                        } else {
+                            // 如果找不到根评论，说明回复指向的评论不在当前列表中
+                            // 这种情况下，将回复作为根评论显示
+                            console.warn('❌ 回复指向的评论不在列表中:', reply.parentId);
+                            rootComments.push(reply);
                         }
                     });
 
@@ -3176,20 +3270,22 @@ npm run dev
                 }
 
                 // 查找回复评论的根评论
-                findRootComment(reply, commentMap, allComments) {
+                findRootComment(reply, commentMap, allComments, article) {
                     const parentId = reply.parentId;
                     if (!parentId) return null;
 
                     const parent = commentMap.get(parentId);
                     if (!parent) return null;
 
-                    // 如果父评论不是回复（即是根评论），则返回它
-                    if (!parent.isReply) {
+                    // 检查父评论是否是根评论（e tag 指向文章ID）
+                    const parentETag = parent.tags.find(t => t[0] === 'e');
+                    if (parentETag && parentETag[1] === article.id) {
+                        // 父评论的 e tag 指向文章ID，说明是根评论
                         return parent;
                     }
 
                     // 如果父评论也是回复，继续向上查找
-                    return this.findRootComment(parent, commentMap, allComments);
+                    return this.findRootComment(parent, commentMap, allComments, article);
                 }
             }
 
