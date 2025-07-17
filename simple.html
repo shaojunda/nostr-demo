@@ -1730,6 +1730,9 @@ npm run dev
                     document.addEventListener('click', (e) => {
                         if (e.target.classList.contains('tab')) {
                             this.switchTab(e.target.dataset.tab);
+                            if (e.target.dataset.tab === 'relays') {
+                                this.updateRelayList();
+                            }
                         }
                     });
 
@@ -1882,9 +1885,6 @@ npm run dev
 
                     // 更新中继列表，显示连接状态
                     this.updateRelayList();
-
-                    // 定时刷新中继状态
-                    this.startRelayStatusAutoRefresh();
                 }
 
                 bindKeyManagementEvents() {
@@ -2407,34 +2407,42 @@ npm run dev
                     const relayItems = document.getElementById('relay-items');
                     if (!relayItems) return;
 
-                    // 获取连接状态
-                    const statusMap = new Map();
-                    if (this.client.pool && this.client.pool.relays) {
-                        for (const relay of this.client.relays) {
-                            const relayObj = this.client.pool.relays.get(relay);
-                            statusMap.set(relay, relayObj && relayObj.connected);
-                        }
+                    console.log('🔍 调试中继状态:');
+                    console.log('- this.client.pool:', this.client.pool);
+                    console.log('- this.client.relays:', this.client.relays);
+                    console.log('- this.client.pool.relays:', this.client.pool?.relays);
+
+                    let statusMap;
+                    if (this.client.pool && typeof this.client.pool.listConnectionStatus === 'function') {
+                        console.log('✅ 使用 listConnectionStatus 方法');
+                        statusMap = this.client.pool.listConnectionStatus();
+                    } else {
+                        console.log('❌ listConnectionStatus 方法不可用');
+                        statusMap = new Map();
                     }
 
                     let html = '';
+                    console.log('🔍 调试 relay 匹配:');
+                    console.log('this.client.relays:', this.client.relays);
                     for (const relay of this.client.relays) {
-                        const connected = statusMap.get(relay);
+                        // statusMap 的 key 都有末尾斜杠，所以标准化为带斜杠的版本
+                        const normalizedRelay = relay.endsWith('/') ? relay : relay + '/';
+                        let connected = statusMap.get(relay);
+                        console.log(`- relay: "${relay}" -> statusMap.get(): ${connected}`);
+                        if (connected === undefined) {
+                            connected = statusMap.get(normalizedRelay);
+                            console.log(`- normalizedRelay: ${normalizedRelay} -> statusMap.get(): ${connected}`);
+                        }
+                        const statusText = connected ? '已连接' : '待连接';
+                        const statusColor = connected ? '#28745' : '#dc3545';
                         html += `<div style="display: flex; align-items: center; margin-bottom: 8px;">
-                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: ${connected ? '#28a745' : '#dc3545'};"></span>
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: ${statusColor};"></span>
                             <span style="flex: 1; font-family: monospace;">${relay}</span>
-                            <span style="margin-left: 10px; color: ${connected ? '#28a745' : '#dc3545'}; font-size: 13px;">${connected ? '已连接' : '未连接'}</span>
+                            <span style="margin-left: 10px; color: ${statusColor}; font-size: 13px;">${statusText}</span>
                             <button style="margin-left: 10px;" onclick="app.handleRemoveRelay('${relay}')">移除</button>
                         </div>`;
                     }
                     relayItems.innerHTML = html;
-                }
-
-                // 定时刷新中继状态
-                startRelayStatusAutoRefresh() {
-                    if (this._relayStatusTimer) clearInterval(this._relayStatusTimer);
-                    this._relayStatusTimer = setInterval(() => {
-                        this.updateRelayList();
-                    }, 3000); // 每 3 秒刷新一次
                 }
 
                 updateQuickAddRelays() {
