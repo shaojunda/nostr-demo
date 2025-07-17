@@ -427,6 +427,33 @@
         .dev-mode #toggleDevMode {
             background: #28a745 !important;
         }
+
+        .comment-item {
+            background: #f4f8fb;
+            border-radius: 8px;
+            box-shadow: 0 1px 4px rgba(102,126,234,0.06);
+            margin-bottom: 16px;
+            padding: 16px 20px;
+            position: relative;
+        }
+        .comment-item .reply-btn {
+            background: #e0e7ff;
+            color: #4f46e5;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            padding: 4px 10px;
+            margin-top: 8px;
+            cursor: pointer;
+        }
+        .comment-item .reply-box {
+            margin-top: 10px;
+        }
+        .child-comment {
+            background: #fff;
+            margin-left: 24px;
+            border-left: 3px solid #a5b4fc;
+        }
     </style>
 </head>
 
@@ -847,18 +874,32 @@ npm run dev
                 }
 
                 // 评论文章
-                async commentOnArticle(articleId, authorPubkey, content) {
-                    const articleATag = `30023:${authorPubkey}:${articleId}`;
+                async commentOnArticle(articleId, targetPubkey, content, parentId = null) {
+                    // targetPubkey: 主评论时为文章作者 pubkey，子评论时为父评论 pubkey
+                    const articleATag = `30023:${articleId}`;
+                    let tags = [];
+                    if (parentId) {
+                        // 回复评论：使用小写标签
+                        tags = [
+                            ['a', articleATag],
+                            ['k', '30023'],
+                            ['p', targetPubkey],
+                            ['e', parentId]
+                        ];
+                    } else {
+                        // 主评论：使用大写标签
+                        tags = [
+                            ['A', articleATag],
+                            ['K', '30023'],
+                            ['P', targetPubkey],
+                            ['E', articleId]
+                        ];
+                    }
                     const event = this.createEvent(
                         this.eventKinds.COMMENT,
                         content,
-                        [
-                            ['A', articleATag],
-                            ['K', '30023'],
-                            ['P', authorPubkey]
-                        ]
+                        tags
                     );
-
                     return await this.publishEvent(event);
                 }
 
@@ -2703,15 +2744,36 @@ npm run dev
                     // 评论区容器
                     const renderComments = async () => {
                         const commentList = document.getElementById('comment-list');
-                        commentList.innerHTML = comments.map(c => {
-                            const cTime = this.client.formatTime(c.created_at);
-                            return `<div class="comment-item">
-                                <div class="comment-author">${this.client.truncateKey(c.pubkey)}</div>
-                                <div class="comment-content">${this.escapeHtml(c.content)}</div>
-                                <div class="comment-time">${cTime}</div>
-                            </div>`;
-                        }).join('');
-
+                        // 构建评论树
+                        const commentMap = new Map();
+                        comments.forEach(c => commentMap.set(c.id, {...c, children: []}));
+                        const roots = [];
+                        comments.forEach(c => {
+                            const parentId = (c.tags.find(t => t[0] === 'e') || [])[1];
+                            if (parentId && commentMap.has(parentId)) {
+                                commentMap.get(parentId).children.push(commentMap.get(c.id));
+                            } else {
+                                roots.push(commentMap.get(c.id));
+                            }
+                        });
+                        // 递归渲染
+                        function renderTree(list, level = 0) {
+                            return list.map(c => `
+                                <div class="comment-item${level > 0 ? ' child-comment' : ''}" data-comment-id="${c.id}">
+                                    <div class="comment-author">${app.client.truncateKey(c.pubkey)}</div>
+                                    <div class="comment-content">${app.escapeHtml(c.content)}</div>
+                                    <div class="comment-time">${app.client.formatTime(c.created_at)}</div>
+                                    <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
+                                    <div class="reply-box" id="reply-box-${c.id}" style="display:none;">
+                                        <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
+                                        <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
+                                    </div>
+                                    ${c.children && c.children.length > 0 ? renderTree(c.children, level+1) : ''}
+                                </div>
+                            `).join('');
+                        }
+                        commentList.innerHTML = renderTree(roots);
+                        // 按钮显示/隐藏
                         const moreBtn = document.getElementById('load-more-comments');
                         if (allCommentsLoaded) {
                             moreBtn.style.display = 'none';
@@ -2720,6 +2782,30 @@ npm run dev
                             moreBtn.style.display = 'block';
                             document.getElementById('no-more-comments').style.display = 'none';
                         }
+                        // 绑定回复按钮
+                        commentList.querySelectorAll('.reply-btn').forEach(btn => {
+                            btn.onclick = () => {
+                                const box = document.getElementById('reply-box-' + btn.dataset.commentId);
+                                box.style.display = box.style.display === 'none' ? 'block' : 'none';
+                            };
+                        });
+                        // 绑定发送按钮
+                        commentList.querySelectorAll('.send-reply-btn').forEach(btn => {
+                            btn.onclick = async () => {
+                                const parentId = btn.dataset.parentId;
+                                const parentPubkey = btn.dataset.parentPubkey;
+                                const input = document.getElementById('reply-input-' + parentId);
+                                const replyContent = input.value.trim();
+                                if (!replyContent) return;
+                                // 发送评论（子评论）
+                                await app.client.commentOnArticle(article.id, parentPubkey, replyContent, parentId);
+                                input.value = '';
+                                document.getElementById('reply-box-' + parentId).style.display = 'none';
+                                // 重新加载评论
+                                commentPage = 0; comments = []; allCommentsLoaded = false;
+                                await loadComments();
+                            };
+                        });
                     };
 
                     // 加载评论
