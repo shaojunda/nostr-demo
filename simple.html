@@ -790,8 +790,10 @@ npm run dev
                 }
 
                 // 发布文章
-                async publishArticle(title, content, summary = '') {
-                    const dTag = 'article_' + Date.now();
+                async publishArticle(title, content, summary = '', dTag = '') {
+                    if (!dTag) {
+                        dTag = 'article_' + Date.now();
+                    }
                     const event = this.createEvent(
                         this.eventKinds.LONG_FORM,
                         content,
@@ -802,7 +804,6 @@ npm run dev
                             ['published_at', Math.floor(Date.now() / 1000).toString()]
                         ]
                     );
-
                     return await this.publishEvent(event);
                 }
 
@@ -1672,12 +1673,15 @@ npm run dev
                                 <label for="articleTitle">文章标题:</label>
                                 <input type="text" id="articleTitle" placeholder="请输入文章标题">
                             </div>
-
+                            <div class="form-group">
+                                <label for="articleDTag">文章标识 (dTag):</label>
+                                <input type="text" id="articleDTag" placeholder="请输入文章标识，留空将自动生成">
+                                <small style="color: #666; font-size: 12px;">dTag 用于唯一标识文章，使用 <code>content_id</code> </small>
+                            </div>
                             <div class="form-group">
                                 <label for="articleContent">文章内容:</label>
                                 <textarea id="articleContent" placeholder="请输入文章内容" rows="10"></textarea>
                             </div>
-
                             <button id="publishArticle">发布文章</button>
                         </div>
 
@@ -2015,13 +2019,14 @@ npm run dev
 
                         const title = document.getElementById('articleTitle').value;
                         const content = document.getElementById('articleContent').value;
+                        const dTag = document.getElementById('articleDTag').value;
 
                         if (!title || !content) {
                             this.showStatus('请填写文章标题和内容', 'error');
                             return;
                         }
 
-                        const result = await this.client.publishArticle(title, content);
+                        const result = await this.client.publishArticle(title, content, '', dTag);
 
                         if (result.success) {
                             this.showStatus(`文章发布成功！已发送到 ${result.relayCount}/${this.client.relays.length} 个中继`, 'success');
@@ -2032,6 +2037,7 @@ npm run dev
                         // 清空表单
                         document.getElementById('articleTitle').value = '';
                         document.getElementById('articleContent').value = '';
+                        document.getElementById('articleDTag').value = '';
 
                         // 添加到本地列表
                         this.articles.unshift(result.event);
