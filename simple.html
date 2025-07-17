@@ -813,6 +813,30 @@ npm run dev
                     return await this.publishEvent(event);
                 }
 
+                // 查询用户是否已点赞某篇文章
+                async checkUserLikeStatus(articleId) {
+                    if (!this.publicKey) {
+                        return false;
+                    }
+
+                    try {
+                        const events = await this.pool.querySync(this.relays, {
+                            kinds: [this.eventKinds.REACTION],
+                            authors: [this.publicKey],
+                            '#e': [articleId],
+                            limit: 1
+                        }, {
+                            maxWait: 5000
+                        });
+
+                        // 检查是否有点赞事件（content 为 '+'）
+                        return events.some(event => event.content === '+');
+                    } catch (error) {
+                        console.warn('查询点赞状态失败:', error);
+                        return false;
+                    }
+                }
+
                 // 收藏文章
                 async bookmarkArticle(articleId, title = '') {
                     const event = this.createEvent(
@@ -2101,7 +2125,7 @@ npm run dev
 
                         // 添加到本地列表
                         this.articles.unshift(result.event);
-                        this.updateTimeline();
+                        await this.updateTimeline();
 
                     } catch (error) {
                         this.showStatus('发布文章失败: ' + error.message, 'error');
@@ -2144,7 +2168,7 @@ npm run dev
                         }
 
                         this.articles = timeline;
-                        this.updateTimeline();
+                        await this.updateTimeline();
 
                         if (timeline.length === 0) {
                             this.showStatus(`未找到任何文章`, 'info');
@@ -2327,6 +2351,13 @@ npm run dev
 
                         await this.client.likeArticle(articleId, authorPubkey);
 
+                        // 保存点赞状态到 localStorage
+                        const likedArticles = JSON.parse(localStorage.getItem('liked-articles') || '[]');
+                        if (!likedArticles.includes(articleId)) {
+                            likedArticles.push(articleId);
+                            localStorage.setItem('liked-articles', JSON.stringify(likedArticles));
+                        }
+
                         button.classList.add('active');
                         button.textContent = '已点赞';
 
@@ -2409,7 +2440,7 @@ npm run dev
                     }
                 }
 
-                updateTimeline() {
+                async updateTimeline() {
                     const timelineContent = document.getElementById('timeline-content');
 
                     if (this.articles.length === 0) {
@@ -2417,6 +2448,7 @@ npm run dev
                         return;
                     }
 
+                    // 先渲染基本内容，不包含点赞状态
                     let html = '';
                     this.articles.forEach(event => {
                         const timeStr = this.client.formatTime(event.created_at);
@@ -2507,6 +2539,57 @@ npm run dev
                     });
 
                     timelineContent.innerHTML = html;
+
+                    // 异步更新点赞状态
+                    this.updateLikeStatuses();
+                }
+
+                // 异步更新所有文章的点赞状态
+                async updateLikeStatuses() {
+                    const likeButtons = document.querySelectorAll('.like-btn');
+
+                    for (const button of likeButtons) {
+                        const articleId = button.dataset.articleId;
+                        try {
+                            const isLiked = await this.checkLikeStatus(articleId);
+                            if (isLiked) {
+                                button.classList.add('active');
+                                button.textContent = '已点赞';
+                            }
+                        } catch (error) {
+                            console.warn('更新点赞状态失败:', error);
+                        }
+                    }
+                }
+
+                // 检查点赞状态
+                async checkLikeStatus(articleId) {
+                    // 首先检查 localStorage 中的缓存状态
+                    const likedArticles = JSON.parse(localStorage.getItem('liked-articles') || '[]');
+                    const cachedLiked = likedArticles.includes(articleId);
+
+                    // 如果缓存中显示已点赞，直接返回 true
+                    if (cachedLiked) {
+                        return true;
+                    }
+
+                    // 如果缓存中没有，则查询 relay 中的实际状态
+                    try {
+                        const actualLiked = await this.client.checkUserLikeStatus(articleId);
+
+                        // 如果 relay 中显示已点赞，更新缓存
+                        if (actualLiked) {
+                            if (!likedArticles.includes(articleId)) {
+                                likedArticles.push(articleId);
+                                localStorage.setItem('liked-articles', JSON.stringify(likedArticles));
+                            }
+                        }
+
+                        return actualLiked;
+                    } catch (error) {
+                        console.warn('查询点赞状态失败，使用缓存状态:', error);
+                        return cachedLiked;
+                    }
                 }
 
                 updateRelayList() {
