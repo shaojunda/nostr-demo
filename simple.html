@@ -519,18 +519,7 @@ npm run dev
                 constructor() {
                     // 默认中继列表
                     this.defaultRelays = [
-                        'wss://relay.damus.io',
-                        'wss://nos.lol',
-                        'wss://relay.snort.social',
-                        'wss://relay.nostr.band',
-                        'wss://nostr.wine',
-                        'wss://relay.nostr.info',
                         'wss://nostr.internal.ikandev.xyz',
-                        'wss://eden.nostr.land',
-                        'wss://relay.current.fyi',
-                        'wss://relay.nostr.net',
-                        'wss://relay.nostr.com',
-                        'wss://relay.nostr.watch'
                     ];
 
                     // 推荐中继列表（用于快速添加）
@@ -1882,6 +1871,7 @@ npm run dev
                             <button class="tab active" data-tab="timeline">时间线</button>
                             <button class="tab" data-tab="publish">发布文章</button>
                             <button class="tab" data-tab="favorites">我的收藏</button>
+                            <button class="tab" data-tab="following">我关注的人</button>
                             <button class="tab" data-tab="keys">密钥管理</button>
                             <button class="tab" data-tab="relays">中继管理</button>
                         </div>
@@ -1918,6 +1908,15 @@ npm run dev
                                 <h2>我的收藏</h2>
                                 <div id="favorites-content">
                                     <div class="loading">正在加载收藏文章...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="following-tab" class="tab-content">
+                            <div style="margin-bottom: 20px;">
+                                <h2>我关注的人</h2>
+                                <div id="following-content">
+                                    <div class="loading">正在加载关注列表...</div>
                                 </div>
                             </div>
                         </div>
@@ -2235,6 +2234,11 @@ npm run dev
                     // 如果切换到收藏tab，加载收藏文章
                     if (tabType === 'favorites') {
                         this.loadFavoritesArticles();
+                    }
+
+                    // 如果切换到关注tab，加载关注列表
+                    if (tabType === 'following') {
+                        this.loadFollowingList();
                     }
 
                     // 如果切换到非时间线tab，确保文章查看器被隐藏
@@ -2720,9 +2724,9 @@ npm run dev
                         if (isCurrentlyFollowed) {
                             // 取消关注
                             console.log('📤 开始取消关注...');
-                            
+
                             const result = await this.client.unfollowAuthor(authorPubkey);
-                            
+
                             console.log('📤 取消关注结果:', result);
 
                             if (result && result.success) {
@@ -2735,9 +2739,9 @@ npm run dev
                         } else {
                             // 添加关注
                             console.log('📤 开始关注作者...');
-                            
+
                             const result = await this.client.followAuthor(authorPubkey, authorName);
-                            
+
                             console.log('📤 关注结果:', result);
 
                             if (result && result.success) {
@@ -2903,7 +2907,7 @@ npm run dev
 
                     // 异步更新收藏状态
                     this.updateBookmarkStatuses();
-                    
+
                     // 异步更新关注状态
                     this.updateFollowStatuses();
                 }
@@ -3321,7 +3325,7 @@ npm run dev
 
                     // 使用独立的 SimplePool 避免状态冲突
                     const commentPool = new SimplePool();
-                    
+
                     try {
                         // 首先查询有 A 标签的评论（根评论）
                         const aTagFilter = {
@@ -3372,7 +3376,7 @@ npm run dev
                         // 按时间升序
                         unique.sort((a, b) => a.created_at - b.created_at);
                         return unique;
-                        
+
                     } finally {
                         commentPool.close(this.client.relays);
                     }
@@ -4122,6 +4126,147 @@ npm run dev
                     } catch (e) {
                         console.error('❌ 加载收藏文章失败:', e);
                         favoritesContent.innerHTML = '<div class="status error">加载失败: ' + e.message + '</div>';
+                    }
+                }
+
+                // 加载并渲染关注列表
+                async loadFollowingList() {
+                    const followingContent = document.getElementById('following-content');
+                    followingContent.innerHTML = '<div class="loading">正在加载关注列表...</div>';
+
+                    try {
+                        // 检查用户是否已登录
+                        if (!this.client.publicKey) {
+                            followingContent.innerHTML = '<div class="status error">请先登录以查看关注列表</div>';
+                            return;
+                        }
+
+                        console.log('🔍 查询用户的关注列表...');
+                        console.log('👤 当前用户公钥:', this.client.publicKey.substring(0, 16) + '...');
+
+                        // 1. 获取关注列表
+                        const followList = await this.client.getCurrentFollowList();
+                        console.log('📋 关注列表:', followList.length, '个');
+
+                        if (followList.length === 0) {
+                            followingContent.innerHTML = '<div class="status info">暂无关注的人</div>';
+                            return;
+                        }
+
+                        // 2. 提取所有关注的用户公钥
+                        const followedPubkeys = followList.map(tag => tag[1]); // p 标签的第二个元素是公钥
+                        console.log('📋 关注的用户公钥:', followedPubkeys.length, '个');
+
+                        // 3. 查询这些用户的 metadata (kind 0)
+                        console.log('🔍 查询关注用户的 metadata...');
+                        const metadataPool = new SimplePool();
+                        let metadataEvents = [];
+
+                        try {
+                            metadataEvents = await metadataPool.querySync(this.client.relays, {
+                                kinds: [this.client.eventKinds.METADATA], // kind 0
+                                authors: followedPubkeys,
+                                limit: 100
+                            }, { maxWait: 10000 });
+                            console.log('✅ 查询到 metadata:', metadataEvents.length, '个');
+
+                            metadataPool.close(this.client.relays);
+                        } catch (error) {
+                            console.error('查询 metadata 失败:', error);
+                            metadataPool.close(this.client.relays);
+                        }
+
+                        // 4. 处理 metadata 并创建用户信息映射
+                        const userProfiles = new Map();
+
+                        // 为每个关注的用户创建基础信息
+                        followList.forEach(tag => {
+                            const pubkey = tag[1];
+                            const relay = tag[2] || '';
+                            const alias = tag[3] || '';
+                            userProfiles.set(pubkey, {
+                                pubkey,
+                                relay,
+                                alias,
+                                name: alias || this.client.truncateKey(pubkey),
+                                display_name: '',
+                                about: '',
+                                picture: '',
+                                nip05: '',
+                                hasMetadata: false
+                            });
+                        });
+
+                        // 用实际的 metadata 更新用户信息
+                        metadataEvents.forEach(event => {
+                            try {
+                                const metadata = JSON.parse(event.content);
+                                const profile = userProfiles.get(event.pubkey);
+                                if (profile) {
+                                    profile.name = metadata.name || metadata.display_name || profile.alias || this.client.truncateKey(event.pubkey);
+                                    profile.display_name = metadata.display_name || '';
+                                    profile.about = metadata.about || '';
+                                    profile.picture = metadata.picture || '';
+                                    profile.nip05 = metadata.nip05 || '';
+                                    profile.hasMetadata = true;
+                                }
+                            } catch (e) {
+                                console.warn('解析 metadata 失败:', e);
+                            }
+                        });
+
+                        // 5. 渲染关注列表
+                        let html = '';
+                        const profiles = Array.from(userProfiles.values());
+
+                        profiles.forEach(profile => {
+                            const avatarUrl = profile.picture || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiM2NjdlZWEiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC4xMzQwMSAxNCA1IDE3LjEzNDAgNSAyMUM1IDIxLjU1MjMgNS40NDc3MiAyMiA2IDIySDEwSDE0SDE4QzE4LjU1MjMgMjIgMTkgMjEuNTUyMyAxOSAyMUMxOSAxNy4xMzQwIDE1Ljg2NiAxNCAxMiAxNFoiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo8L3N2Zz4K';
+
+                            html += `
+                            <div class="following-item" style="border: 1px solid #e1e5e9; border-radius: 8px; padding: 15px; margin-bottom: 10px; background: white;">
+                                <div style="display: flex; align-items: center; gap: 15px;">
+                                    <img src="${profile.picture || avatarUrl}"
+                                         alt="头像"
+                                         style="width: 50px; height: 50px; border-radius: 25px; object-fit: cover; background: #f0f0f0;"
+                                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiM2NjdlZWEiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC4xMzQwMSAxNCA1IDE3LjEzNDAgNSAyMUM1IDIxLjU1MjMgNS40NDc3MiAyMiA2IDIySDEwSDE0SDE4QzE4LjU1MjMgMjIgMTkgMjEuNTUyMyAxOSAyMUMxOSAxNy4xMzQwIDE1Ljg2NiAxNCAxMiAxNFoiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo8L3N2Zz4K'">
+
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 600; font-size: 16px; color: #333; margin-bottom: 5px;">
+                                            ${this.escapeHtml(profile.name)}
+                                            ${profile.display_name && profile.display_name !== profile.name ?
+                                                `<span style="color: #666; font-weight: normal; font-size: 14px;">(@${this.escapeHtml(profile.display_name)})</span>` : ''}
+                                        </div>
+
+                                        ${profile.about ?
+                                            `<div style="color: #666; font-size: 14px; margin-bottom: 8px;">${this.escapeHtml(profile.about)}</div>` : ''}
+
+                                        ${profile.nip05 ?
+                                            `<div style="color: #667eea; font-size: 13px; margin-bottom: 8px;">✓ ${this.escapeHtml(profile.nip05)}</div>` : ''}
+
+                                        <div style="color: #999; font-size: 12px;">
+                                            公钥: ${this.client.truncateKey(profile.pubkey)}
+                                            ${profile.hasMetadata ? ' | 已加载资料' : ' | 无资料'}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <button class="follow-btn active"
+                                                data-author-pubkey="${profile.pubkey}"
+                                                data-author-name="${this.escapeHtml(profile.name)}"
+                                                style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                                            已关注
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            `;
+                        });
+
+                        followingContent.innerHTML = html;
+
+                    } catch (e) {
+                        console.error('❌ 加载关注列表失败:', e);
+                        followingContent.innerHTML = '<div class="status error">加载失败: ' + e.message + '</div>';
                     }
                 }
             }
