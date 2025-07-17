@@ -472,7 +472,7 @@
     </div>
 
     <!-- 通过 CDN 加载 nostr-tools -->
-    <script src="https://unpkg.com/nostr-tools@2.7.0/lib/nostr.bundle.js"></script>
+    <script src="https://unpkg.com/nostr-tools@2.15.0/lib/nostr.bundle.js"></script>
 
     <script>
         // 等待 nostr-tools 加载完成
@@ -516,7 +516,11 @@ npm run dev
                         'wss://nostr.wine',
                         'wss://relay.nostr.info',
                         'wss://nostr.internal.ikandev.xyz',
-                        'wss://eden.nostr.land'
+                        'wss://eden.nostr.land',
+                        'wss://relay.current.fyi',
+                        'wss://relay.nostr.net',
+                        'wss://relay.nostr.com',
+                        'wss://relay.nostr.watch'
                     ];
 
                     // 推荐中继列表（用于快速添加）
@@ -528,7 +532,11 @@ npm run dev
                         { url: 'wss://relay.nostr.band', name: 'nostr.band', description: 'Nostr.band 中继' },
                         { url: 'wss://eden.nostr.land', name: 'eden.nostr.land', description: 'Eden 中继' },
                         { url: 'wss://relay.nostr.info', name: 'nostr.info', description: 'Nostr.info 中继' },
-                        { url: 'wss://nostr.wine', name: 'nostr.wine', description: 'Nostr.wine 中继' }
+                        { url: 'wss://nostr.wine', name: 'nostr.wine', description: 'Nostr.wine 中继' },
+                        { url: 'wss://relay.current.fyi', name: 'current.fyi', description: 'Current.fyi 中继' },
+                        { url: 'wss://relay.nostr.net', name: 'nostr.net', description: 'Nostr.net 中继' },
+                        { url: 'wss://relay.nostr.com', name: 'nostr.com', description: 'Nostr.com 中继' },
+                        { url: 'wss://relay.nostr.watch', name: 'nostr.watch', description: 'Nostr.watch 中继' }
                     ];
 
                     // 从本地存储加载中继列表，如果没有则使用默认列表
@@ -646,59 +654,6 @@ npm run dev
                     }
 
                     console.log('用户设置成功');
-                }
-
-                // 初始化中继连接
-                async initializeRelays() {
-                    console.log('正在初始化中继连接...');
-
-                    const connectionPromises = this.relays.map(async (relay) => {
-                        try {
-                            await this.testRelayConnection(relay);
-                            this.connectionStatus.set(relay, 'connected');
-                            console.log(`✅ 中继连接成功: ${relay}`);
-                        } catch (error) {
-                            this.connectionStatus.set(relay, 'failed');
-                            console.error(`❌ 中继连接失败: ${relay}`, error.message);
-                        }
-                    });
-
-                    await Promise.allSettled(connectionPromises);
-
-                    const connectedCount = Array.from(this.connectionStatus.values()).filter(status => status === 'connected').length;
-                    console.log(`中继初始化完成: ${connectedCount}/${this.relays.length} 个中继连接成功`);
-                }
-
-                // 测试中继连接
-                async testRelayConnection(relayUrl) {
-                    return new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject(new Error('连接超时'));
-                        }, 5000);
-
-                        try {
-                            console.log(`尝试连接到中继: ${relayUrl}`);
-                            const ws = new WebSocket(relayUrl);
-
-                            ws.onopen = () => {
-                                console.log(`中继连接成功: ${relayUrl}`);
-                                clearTimeout(timeout);
-                                ws.close();
-                                resolve();
-                            };
-
-                            ws.onerror = (error) => {
-                                console.log(`中继连接失败: ${relayUrl}`, error);
-                                clearTimeout(timeout);
-                                reject(error);
-                            };
-
-                        } catch (error) {
-                            console.log(`中继连接异常: ${relayUrl}`, error);
-                            clearTimeout(timeout);
-                            reject(error);
-                        }
-                    });
                 }
 
                 // 创建并签名事件
@@ -918,48 +873,25 @@ npm run dev
                             kinds = [this.eventKinds.LONG_FORM];
                         }
 
-                        const allEvents = [];
-                        const relayResults = new Map();
+                        console.log(`时间线类型: ${timelineType}, 查询的 kinds:`, kinds);
 
-                        // 逐个尝试中继，即使某个失败也继续尝试其他
-                        for (const relay of this.relays) {
-                            try {
-                                console.log(`正在查询中继: ${relay}`);
+                        // 使用正确的 maxWait 参数进行一次性查询
+                        const events = await this.pool.querySync(this.relays, {
+                            kinds: kinds,
+                            limit: limit * 2
+                        }, {
+                            maxWait: 10000 // 10秒超时
+                        });
 
-                                console.log(`🔍 正在查询中继 ${relay}，查询条件:`, {
-                                    kinds: kinds,
-                                    limit: limit * 2,
-                                    timeout: 8000
-                                });
+                        console.log(`✅ 获取到 ${events.length} 个事件`);
 
-                                const events = await this.pool.querySync([relay], {
-                                    kinds: kinds,
-                                    limit: limit * 2
-                                }, {
-                                    timeout:8000                   });
-
-                                console.log(`✅ 中继 ${relay} 返回 ${events.length} 个事件`);
-                                relayResults.set(relay, { success: true, count: events.length });
-                                allEvents.push(...events);
-
-                            } catch (error) {
-                                console.warn(`❌ 中继 ${relay} 查询失败:`, error.message);
-                                relayResults.set(relay, { success: false, error: error.message });
-                                // 继续尝试下一个中继，不抛出异常
-                            }
-                        }
-
-                        // 统计结果
-                        const successfulRelays = Array.from(relayResults.values()).filter(r => r.success).length;
-                        console.log(`成功查询 ${successfulRelays}/${this.relays.length} 个中继，总共获取 ${allEvents.length} 个事件`);
-
-                        if (allEvents.length === 0) {
-                            console.warn('所有中继都查询失败，返回空结果');
+                        if (events.length === 0) {
+                            console.warn('未获取到任何事件');
                             return [];
                         }
 
                         // 去重并排序
-                        const uniqueEvents = this.removeDuplicateEvents(allEvents);
+                        const uniqueEvents = this.removeDuplicateEvents(events);
                         const sortedEvents = uniqueEvents.sort((a, b) => b.created_at - a.created_at);
 
                         console.log(`去重后剩余 ${sortedEvents.length} 个事件`);
@@ -978,42 +910,27 @@ npm run dev
                     try {
                         console.log(`获取用户 ${pubkey.substring(0, 16)}... 的时间线`);
 
-                        const allEvents = [];
+                        // 使用正确的 maxWait 参数进行一次性查询
+                        const events = await this.pool.querySync(this.relays, {
+                            kinds: [this.eventKinds.LONG_FORM], // 只查询文章，不包含评论
+                            authors: [pubkey],
+                            limit: limit
+                        }, {
+                            maxWait: 10000 // 10秒超时
+                        });
 
-                        // 逐个尝试中继
-                        for (const relay of this.relays) {
-                            try {
-                                console.log(`正在从 ${relay} 查询用户事件`);
-
-                                const events = await this.pool.querySync([relay], {
-                                    kinds: [this.eventKinds.LONG_FORM], // 只查询文章，不包含评论
-                                    authors: [pubkey],
-                                    limit: limit
-                                }, {
-                                    timeout: 8000
-                                });
-
-                                console.log(`✅ 中继 ${relay} 返回 ${events.length} 个用户事件`);
-                                if (events.length > 0) {
-                                    console.log(`📝 事件详情:`, events.map(e => ({
-                                        id: e.id.substring(0, 16) + '...',
-                                        kind: e.kind,
-                                        created_at: e.created_at,
-                                        content_preview: e.content.substring(0, 50) + '...'
-                                    })));
-                                }
-                                allEvents.push(...events);
-
-                            } catch (error) {
-                                console.warn(`❌ 中继 ${relay} 查询用户事件失败:`, error.message);
-                                // 继续尝试下一个中继
-                            }
+                        console.log(`✅ 获取到 ${events.length} 个用户事件`);
+                        if (events.length > 0) {
+                            console.log(`📝 事件详情:`, events.map(e => ({
+                                id: e.id.substring(0, 16) + '...',
+                                kind: e.kind,
+                                created_at: e.created_at,
+                                content_preview: e.content.substring(0, 50) + '...'
+                            })));
                         }
 
-                        console.log(`总共获取到用户 ${allEvents.length} 个事件`);
-
                         // 去重并排序
-                        const uniqueEvents = this.removeDuplicateEvents(allEvents);
+                        const uniqueEvents = this.removeDuplicateEvents(events);
                         return uniqueEvents.sort((a, b) => b.created_at - a.created_at);
 
                     } catch (error) {
@@ -1636,7 +1553,6 @@ npm run dev
                         }
                     }
 
-                    await this.client.initializeRelays();
                     this.updateRelayList();
                     this.updateQuickAddRelays();
                 }
@@ -1963,6 +1879,12 @@ npm run dev
 
                     // 密钥管理功能
                     this.bindKeyManagementEvents();
+
+                    // 更新中继列表，显示连接状态
+                    this.updateRelayList();
+
+                    // 定时刷新中继状态
+                    this.startRelayStatusAutoRefresh();
                 }
 
                 bindKeyManagementEvents() {
@@ -2483,35 +2405,36 @@ npm run dev
 
                 updateRelayList() {
                     const relayItems = document.getElementById('relay-items');
-                    const relays = this.client.getRelays();
+                    if (!relayItems) return;
+
+                    // 获取连接状态
+                    const statusMap = new Map();
+                    if (this.client.pool && this.client.pool.relays) {
+                        for (const relay of this.client.relays) {
+                            const relayObj = this.client.pool.relays.get(relay);
+                            statusMap.set(relay, relayObj && relayObj.connected);
+                        }
+                    }
 
                     let html = '';
-                    relays.forEach(relay => {
-                        html += `
-                        <div class="relay-item">
-                            <div>
-                                <span class="relay-status ${relay.connected ? 'connected' : 'disconnected'}"></span>
-                                ${relay.url}
-                            </div>
-                                <div>
-                                    ${relay.connected ? '已连接' : '未连接'}
-                                    <button class="remove-relay-btn" data-relay="${relay.url}" style="background: #dc3545; margin-left: 10px; padding: 4px 8px; font-size: 12px;">
-                                        ❌ 移除
-                                    </button>
-                                </div>
-                        </div>
-                    `;
-                    });
-
+                    for (const relay of this.client.relays) {
+                        const connected = statusMap.get(relay);
+                        html += `<div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: ${connected ? '#28a745' : '#dc3545'};"></span>
+                            <span style="flex: 1; font-family: monospace;">${relay}</span>
+                            <span style="margin-left: 10px; color: ${connected ? '#28a745' : '#dc3545'}; font-size: 13px;">${connected ? '已连接' : '未连接'}</span>
+                            <button style="margin-left: 10px;" onclick="app.handleRemoveRelay('${relay}')">移除</button>
+                        </div>`;
+                    }
                     relayItems.innerHTML = html;
+                }
 
-                    // 绑定移除按钮事件
-                    document.querySelectorAll('.remove-relay-btn').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            const relayUrl = e.target.dataset.relay;
-                            this.handleRemoveRelay(relayUrl);
-                        });
-                    });
+                // 定时刷新中继状态
+                startRelayStatusAutoRefresh() {
+                    if (this._relayStatusTimer) clearInterval(this._relayStatusTimer);
+                    this._relayStatusTimer = setInterval(() => {
+                        this.updateRelayList();
+                    }, 3000); // 每 3 秒刷新一次
                 }
 
                 updateQuickAddRelays() {
