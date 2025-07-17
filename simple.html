@@ -446,6 +446,12 @@
             margin-top: 8px;
             cursor: pointer;
         }
+        .comment-item .comment-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
         .comment-item .reply-box {
             margin-top: 10px;
         }
@@ -829,15 +835,31 @@ npm run dev
                 }
 
                 // 评论文章
-                async commentOnArticle(articleId, targetPubkey, content, parentId = null) {
-                    // targetPubkey: 主评论时为文章作者 pubkey，子评论时为父评论 pubkey
-                    const articleATag = `30023:${articleId}`;
+                async commentOnArticle(articleId, authorPubkey, targetPubkey, content, parentId = null, article = null, dTag = null) {
+                    // authorPubkey: 文章作者的 pubkey（用于大写 P 标签）
+                    // targetPubkey: 被回复评论作者的 pubkey（用于小写 p 标签）
+                    // dTag: 文章的 d-tag
+                    // 从传入的 article 参数构建 aTag
+                    if (!article) {
+                        throw new Error('缺少文章信息');
+                    }
+
+                    // 如果没有传入 dTag，尝试从文章标签中获取
+                    if (!dTag) {
+                        dTag = this.getTagValue(article.tags, 'd') || articleId;
+                    }
+
+                    const articleATag = `30023:${article.pubkey}:${dTag}`;
                     let tags = [];
+
                     if (parentId) {
-                        // 回复评论：使用小写标签
+                        // 回复评论：同时使用大写标签指向文章和小写标签指向被回复的评论
                         tags = [
-                            ['a', articleATag],
-                            ['k', '30023'],
+                            ['A', articleATag],  // 大写标签指向文章
+                            ['K', '30023'],
+                            ['P', authorPubkey],
+                            ['E', articleId],
+                            ['k', '1111'],
                             ['p', targetPubkey],
                             ['e', parentId]
                         ];
@@ -846,10 +868,14 @@ npm run dev
                         tags = [
                             ['A', articleATag],
                             ['K', '30023'],
-                            ['P', targetPubkey],
-                            ['E', articleId]
+                            ['P', authorPubkey],
+                            ['E', articleId],
+                            ['k', '1111'],
+                            ['p', authorPubkey],
+                            ['e', articleId]
                         ];
                     }
+
                     const event = this.createEvent(
                         this.eventKinds.COMMENT,
                         content,
@@ -1867,6 +1893,10 @@ npm run dev
                         }
                         // 文章点击事件
                         if (e.target.closest('.article-item') && e.target.closest('.article-item').dataset.articleId) {
+                            // 如果点击的是按钮，不进入文章详情页
+                            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                                return;
+                            }
                             const articleId = e.target.closest('.article-item').dataset.articleId;
                             await this.showArticleViewer(articleId);
                         }
@@ -2301,9 +2331,30 @@ npm run dev
                         const content = prompt('请输入评论内容:');
                         if (!content) return;
 
-                        await this.client.commentOnArticle(articleId, authorPubkey, content);
+                        // 需要获取当前文章信息
+                        const currentArticle = this.currentArticle;
+                        if (!currentArticle) {
+                            this.showStatus('请先进入文章页面', 'error');
+                            return;
+                        }
+                        const dTag = this.client.getTagValue(currentArticle.tags, 'd') || articleId;
+                        await this.client.commentOnArticle(articleId, authorPubkey, currentArticle.pubkey, content, null, currentArticle, dTag);
 
                         this.showStatus('评论发布成功！', 'success');
+
+                        // 如果当前在文章阅读页面，重新加载评论
+                        const articleViewer = document.getElementById('article-viewer');
+                        if (articleViewer && articleViewer.style.display !== 'none') {
+                            // 重新加载当前文章的评论
+                            const currentArticle = this.currentArticle;
+                            if (currentArticle && currentArticle.id === articleId) {
+                                // 重置评论状态并重新加载
+                                this.commentPage = 0;
+                                this.comments = [];
+                                this.allCommentsLoaded = false;
+                                await this.loadCommentsForArticle(currentArticle);
+                            }
+                        }
 
                     } catch (error) {
                         this.showStatus('发布评论失败: ' + error.message, 'error');
@@ -2439,10 +2490,17 @@ npm run dev
                             <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: ${statusColor};"></span>
                             <span style="flex: 1; font-family: monospace;">${relay}</span>
                             <span style="margin-left: 10px; color: ${statusColor}; font-size: 13px;">${statusText}</span>
-                            <button style="margin-left: 10px;" onclick="app.handleRemoveRelay('${relay}')">移除</button>
+                            <button class="remove-relay-btn" data-relay="${relay}" style="margin-left: 10px;">移除</button>
                         </div>`;
                     }
                     relayItems.innerHTML = html;
+                    // 绑定移除按钮事件
+                    relayItems.querySelectorAll('.remove-relay-btn').forEach(btn => {
+                        btn.onclick = (e) => {
+                            const relayUrl = btn.getAttribute('data-relay');
+                            this.handleRemoveRelay(relayUrl);
+                        };
+                    });
                 }
 
                 updateQuickAddRelays() {
@@ -2640,21 +2698,37 @@ npm run dev
 
                 // 获取某篇文章的评论，分页
                 async getCommentsForArticle(article, offset = 0, limit = 5) {
-                    // 评论 kind 通常为 1111，tag A = 30023:pubkey:articleId
-                    const aTag = `30023:${article.pubkey}:${article.id}`;
+                    // 评论 kind 通常为 1111，tag A = 30023:pubkey:dTag
+                    // 从文章标签中获取 d tag
+                    const dTag = this.client.getTagValue(article.tags, 'd') || article.id;
+                    const aTag = `30023:${article.pubkey}:${dTag}`;
+
+                    console.log('🔍 调试文章信息:', {
+                        articleId: article.id,
+                        pubkey: article.pubkey,
+                        dTag: dTag,
+                        aTag: aTag
+                    });
+
                     const filter = {
                         kinds: [this.client.eventKinds.COMMENT],
                         '#A': [aTag],
                         limit: offset + limit
                     };
-                    // 合并所有中继评论
+
+                    console.log('🔍 查询评论过滤器:', filter);
+
+                    // 一次性查询所有中继
                     let allComments = [];
-                    for (const relay of this.client.relays) {
-                        try {
-                            const events = await this.client.pool.querySync([relay], filter, { timeout: 8000 });
-                            allComments.push(...events);
-                        } catch (e) {}
+                    try {
+                        allComments = await this.client.pool.querySync(this.client.relays, filter, { maxWait: 10000 });
+                    } catch (e) {
+                        console.warn('查询评论失败:', e);
                     }
+
+                    console.log('🔍 调试评论查询结果:');
+                    console.log('allComments:', allComments);
+
                     // 去重
                     const unique = Array.from(new Map(allComments.map(e => [e.id, e])).values());
                     // 按时间升序
@@ -2668,6 +2742,9 @@ npm run dev
                     const article = this.articles.find(a => a.id === articleId);
                     if (!article) return;
 
+                    // 保存当前文章信息
+                    this.currentArticle = article;
+
                     // 构建文章详情HTML
                     const title = this.client.getTagValue(article.tags, 'title') || '无标题';
                     const publishedAt = this.client.getTagValue(article.tags, 'published_at');
@@ -2676,10 +2753,10 @@ npm run dev
                     const author = this.client.truncateKey(article.pubkey);
 
                     // 评论分页参数
-                    let commentPage = 0;
-                    const pageSize = 5;
-                    let allCommentsLoaded = false;
-                    let comments = [];
+                    this.commentPage = 0;
+                    this.pageSize = 5;
+                    this.allCommentsLoaded = false;
+                    this.comments = [];
 
                     // 查找回复评论的根评论
                     function findRootComment(reply, commentMap, allComments) {
@@ -2756,11 +2833,30 @@ npm run dev
                                         <div class="comment-author">${authorName}</div>
                                         <div class="comment-content">${app.escapeHtml(c.content)}</div>
                                         <div class="comment-time">${timeStr}</div>
-                                        <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
-                                        <div class="reply-box id="reply-box-${c.id}" style="display:none;">
+                                        <div class="comment-actions">
+                                            <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
+                                            <button class="show-json-btn" data-event-id="${c.id}" style="background: #6c757d; margin-left: 5px; font-size: 12px; padding: 4px 8px;">📋 JSON</button>
+                                        </div>
+                                        <div class="reply-box" id="reply-box-${c.id}" style="display:none;">
                                             <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
                                             <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
                                         </div>
+                                        <div id="json-modal-${c.id}" class="json-modal" style="display: none;">
+                                            <div class="json-modal-content">
+                                                <div class="json-modal-header">
+                                                    <h3>评论事件完整 JSON</h3>
+                                                    <button class="close-json-btn" data-event-id="${c.id}">&times;</button>
+                                                </div>
+                                                <div class="json-modal-body">
+                                                    <textarea id="json-content-${c.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(c, null, 2)}</textarea>
+                                                </div>
+                                                <div class="json-modal-footer">
+                                                    <button class="copy-json-btn" data-event-id="${c.id}" style="background: #28a745;">复制 JSON</button>
+                                                    <button class="close-json-btn" data-event-id="${c.id}" style="background: #6c757d;">关闭</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 `;
 
                                 // 渲染第二层回复（所有回复都展平显示）
@@ -2777,10 +2873,28 @@ npm run dev
                                                 <div class="comment-author">${replyAuthorName} ${replyTarget}</div>
                                                 <div class="comment-content">${app.escapeHtml(reply.content)}</div>
                                                 <div class="comment-time">${replyTimeStr}</div>
-                                                <button class="reply-btn" data-comment-id="${reply.id}" data-parent-pubkey="${reply.pubkey}">回复</button>
-                                                <div class="reply-box id=reply-box-${reply.id}" style="display:none;">
+                                                <div class="comment-actions">
+                                                    <button class="reply-btn" data-comment-id="${reply.id}" data-parent-pubkey="${reply.pubkey}">回复</button>
+                                                    <button class="show-json-btn" data-event-id="${reply.id}" style="background: #6c757d; margin-left: 5px; font-size: 12px; padding: 4px 8px;">📋 JSON</button>
+                                                </div>
+                                                <div class="reply-box" id="reply-box-${reply.id}" style="display:none;">
                                                     <textarea id="reply-input-${reply.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
                                                     <button class="send-reply-btn" data-parent-id="${reply.id}" data-parent-pubkey="${reply.pubkey}" style="margin-top:4px;">发送</button>
+                                                </div>
+                                                <div id="json-modal-${reply.id}" class="json-modal" style="display: none;">
+                                                    <div class="json-modal-content">
+                                                        <div class="json-modal-header">
+                                                            <h3>评论事件完整 JSON</h3>
+                                                            <button class="close-json-btn" data-event-id="${reply.id}">&times;</button>
+                                                        </div>
+                                                        <div class="json-modal-body">
+                                                            <textarea id="json-content-${reply.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(reply, null, 2)}</textarea>
+                                                        </div>
+                                                        <div class="json-modal-footer">
+                                                            <button class="copy-json-btn" data-event-id="${reply.id}" style="background: #28a745;">复制 JSON</button>
+                                                            <button class="close-json-btn" data-event-id="${reply.id}" style="background: #6c757d;">关闭</button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         `;
@@ -2797,7 +2911,7 @@ npm run dev
 
                         // 按钮显示/隐藏
                         const moreBtn = document.getElementById('load-more-comments');
-                        if (allCommentsLoaded) {
+                        if (this.allCommentsLoaded) {
                             moreBtn.style.display = 'none';
                             document.getElementById('no-more-comments').style.display = 'block';
                         } else {
@@ -2826,19 +2940,15 @@ npm run dev
                                 input.value = '';
                                 document.getElementById('reply-box-' + parentId).style.display = 'none';
                                 // 重新加载评论
-                                commentPage = 0; comments = []; allCommentsLoaded = false;
-                                await loadComments();
+                                this.commentPage = 0; this.comments = []; this.allCommentsLoaded = false;
+                                await this.loadCommentsForArticle(article);
                             };
                         });
                     };
 
                     // 加载评论
                     const loadComments = async () => {
-                        const newComments = await this.getCommentsForArticle(article, commentPage * pageSize, pageSize);
-                        if (newComments.length < pageSize) allCommentsLoaded = true;
-                        comments = comments.concat(newComments);
-                        commentPage++;
-                        await renderComments();
+                        await this.loadCommentsForArticle(article);
                     };
 
                     // 阅读页HTML
@@ -2871,6 +2981,210 @@ npm run dev
 
                     // 初始加载
                     await loadComments();
+                }
+
+                async loadCommentsForArticle(article) {
+                    const newComments = await this.getCommentsForArticle(article, this.commentPage * this.pageSize, this.pageSize);
+                    if (newComments.length < this.pageSize) this.allCommentsLoaded = true;
+                    this.comments = this.comments.concat(newComments);
+                    this.commentPage++;
+                    await this.renderComments(article);
+                }
+
+                async renderComments(article) {
+                    const commentList = document.getElementById('comment-list');
+                    commentList.innerHTML = '';
+
+                    if (this.comments.length === 0) {
+                        commentList.innerHTML = '<div class="status info">暂无评论，请发布评论或连接到更多中继</div>';
+                        return;
+                    }
+
+                    // 构建两层展平评论结构
+                    const commentMap = new Map();
+                    this.comments.forEach(c => commentMap.set(c.id, {...c, children: []}));
+
+                    const rootComments = [];
+                    const allReplies = [];
+
+                    // 分类评论：根评论 vs 回复评论
+                    this.comments.forEach(c => {
+                        const parentId = (c.tags.find(t => t[0] === 'e') || [])[1];
+                        if (parentId && commentMap.has(parentId)) {
+                            const currentComment = commentMap.get(c.id);
+                            currentComment.isReply = true;
+                            currentComment.parentId = parentId;
+
+                            // 设置回复目标信息
+                            const parentComment = commentMap.get(parentId);
+                            if (parentComment) {
+                                currentComment.replyToAuthor = parentComment.pubkey;
+                                currentComment.replyToContent = parentComment.content.substring(0, 50) + '...';
+                            }
+
+                            allReplies.push(currentComment);
+                        } else {
+                            // 检查是否是对文章的直接评论（包含 A 标签）
+                            const hasArticleTag = c.tags.some(tag => tag[0] === 'A');
+                            if (hasArticleTag) {
+                                rootComments.push(commentMap.get(c.id));
+                            }
+                        }
+                    });
+
+                    // 将所有回复按时间排序后添加到对应的根评论下
+                    allReplies.sort((a, b) => a.created_at - b.created_at);
+
+                    // 找到每个回复应该归属的根评论
+                    allReplies.forEach(reply => {
+                        const rootComment = this.findRootComment(reply, commentMap, this.comments);
+                        if (rootComment) {
+                            rootComment.children.push(reply);
+                        }
+                    });
+
+                    // 渲染两层展平结构
+                    function renderFlatComments(list) {
+                        return list.map(c => {
+                            const authorName = this.client.truncateKey(c.pubkey);
+                            const timeStr = this.client.formatTime(c.created_at);
+
+                            let html = `
+                                <div class="comment-item" data-comment-id="${c.id}">
+                                    <div class="comment-author">${authorName}</div>
+                                    <div class="comment-content">${this.escapeHtml(c.content)}</div>
+                                    <div class="comment-time">${timeStr}</div>
+                                    <div class="comment-actions">
+                                        <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
+                                        <button class="show-json-btn" data-event-id="${c.id}" style="background: #6c757d; margin-left: 5px; font-size: 12px; padding: 4px 8px;">📋 JSON</button>
+                                    </div>
+                                    <div class="reply-box" id="reply-box-${c.id}" style="display:none;">
+                                        <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
+                                        <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
+                                    </div>
+                                    <div id="json-modal-${c.id}" class="json-modal" style="display: none;">
+                                        <div class="json-modal-content">
+                                            <div class="json-modal-header">
+                                                <h3>评论事件完整 JSON</h3>
+                                                <button class="close-json-btn" data-event-id="${c.id}">&times;</button>
+                                            </div>
+                                            <div class="json-modal-body">
+                                                <textarea id="json-content-${c.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(c, null, 2)}</textarea>
+                                            </div>
+                                            <div class="json-modal-footer">
+                                                <button class="copy-json-btn" data-event-id="${c.id}" style="background: #28a745;">复制 JSON</button>
+                                                <button class="close-json-btn" data-event-id="${c.id}" style="background: #6c757d;">关闭</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+
+                            // 渲染第二层回复（所有回复都展平显示）
+                            if (c.children && c.children.length > 0) {
+                                html += '<div class="replies-section" style="margin-left: 20px; margin-top: 10px;">';
+                                c.children.forEach(reply => {
+                                    const replyAuthorName = this.client.truncateKey(reply.pubkey);
+                                    const replyTimeStr = this.client.formatTime(reply.created_at);
+                                    const replyTarget = reply.replyToAuthor ?
+                                        `回复 @${this.client.truncateKey(reply.replyToAuthor)}` : '';
+
+                                    html += `
+                                        <div class="comment-item child-comment" data-comment-id="${reply.id}">
+                                            <div class="comment-author">${replyAuthorName} ${replyTarget}</div>
+                                            <div class="comment-content">${this.escapeHtml(reply.content)}</div>
+                                            <div class="comment-time">${replyTimeStr}</div>
+                                            <div class="comment-actions">
+                                                <button class="reply-btn" data-comment-id="${reply.id}" data-parent-pubkey="${reply.pubkey}">回复</button>
+                                                <button class="show-json-btn" data-event-id="${reply.id}" style="background: #6c757d; margin-left: 5px; font-size: 12px; padding: 4px 8px;">📋 JSON</button>
+                                            </div>
+                                            <div class="reply-box" id="reply-box-${reply.id}" style="display:none;">
+                                                <textarea id="reply-input-${reply.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
+                                                <button class="send-reply-btn" data-parent-id="${reply.id}" data-parent-pubkey="${reply.pubkey}" style="margin-top:4px;">发送</button>
+                                            </div>
+                                            <div id="json-modal-${reply.id}" class="json-modal" style="display: none;">
+                                                <div class="json-modal-content">
+                                                    <div class="json-modal-header">
+                                                        <h3>评论事件完整 JSON</h3>
+                                                        <button class="close-json-btn" data-event-id="${reply.id}">&times;</button>
+                                                    </div>
+                                                    <div class="json-modal-body">
+                                                        <textarea id="json-content-${reply.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(reply, null, 2)}</textarea>
+                                                    </div>
+                                                    <div class="json-modal-footer">
+                                                        <button class="copy-json-btn" data-event-id="${reply.id}" style="background: #28a745;">复制 JSON</button>
+                                                        <button class="close-json-btn" data-event-id="${reply.id}" style="background: #6c757d;">关闭</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                                html += '</div>';
+                            }
+
+                            html += '</div>';
+                            return html;
+                        }).join('');
+                    }
+
+                    commentList.innerHTML = renderFlatComments.call(this, rootComments);
+
+                    // 按钮显示/隐藏
+                    const moreBtn = document.getElementById('load-more-comments');
+                    if (this.allCommentsLoaded) {
+                        moreBtn.style.display = 'none';
+                        document.getElementById('no-more-comments').style.display = 'block';
+                    } else {
+                        moreBtn.style.display = 'block';
+                        document.getElementById('no-more-comments').style.display = 'none';
+                    }
+
+                    // 绑定回复按钮
+                    commentList.querySelectorAll('.reply-btn').forEach(btn => {
+                        btn.onclick = () => {
+                            const box = document.getElementById('reply-box-' + btn.dataset.commentId);
+                            box.style.display = box.style.display === 'none' ? 'block' : 'none';
+                        };
+                    });
+
+                    // 绑定发送按钮
+                    commentList.querySelectorAll('.send-reply-btn').forEach(btn => {
+                        btn.onclick = async () => {
+                            const parentId = btn.dataset.parentId;
+                            const parentPubkey = btn.dataset.parentPubkey;
+                            const input = document.getElementById('reply-input-' + parentId);
+                            const replyContent = input.value.trim();
+                            if (!replyContent) return;
+                            // 发送评论（子评论）
+                            const dTag = this.client.getTagValue(article.tags, 'd') || article.id;
+                            await this.client.commentOnArticle(article.id, article.pubkey, parentPubkey, replyContent, parentId, article, dTag);
+                            input.value = '';
+                            document.getElementById('reply-box-' + parentId).style.display = 'none';
+                            // 重新加载评论
+                            this.commentPage = 0;
+                            this.comments = [];
+                            this.allCommentsLoaded = false;
+                            await this.loadCommentsForArticle(article);
+                        };
+                    });
+                }
+
+                // 查找回复评论的根评论
+                findRootComment(reply, commentMap, allComments) {
+                    const parentId = reply.parentId;
+                    if (!parentId) return null;
+
+                    const parent = commentMap.get(parentId);
+                    if (!parent) return null;
+
+                    // 如果父评论不是回复（即是根评论），则返回它
+                    if (!parent.isReply) {
+                        return parent;
+                    }
+
+                    // 如果父评论也是回复，继续向上查找
+                    return this.findRootComment(parent, commentMap, allComments);
                 }
             }
 
