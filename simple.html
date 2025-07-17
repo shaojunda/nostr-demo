@@ -853,6 +853,31 @@ npm run dev
                     }
                 }
 
+                // 获取当前关注列表
+                async getCurrentFollowList() {
+                    // 使用独立的 SimplePool 避免状态冲突
+                    const followPool = new SimplePool();
+                    try {
+                        const followEvents = await followPool.querySync(this.relays, {
+                            kinds: [this.eventKinds.CONTACT_LIST],
+                            authors: [this.publicKey],
+                            limit: 1
+                        }, { maxWait: 10000 });
+
+                        if (followEvents.length === 0) return [];
+
+                        // 获取最新的关注事件
+                        const latest = followEvents.sort((a, b) => b.created_at - a.created_at)[0];
+                        // 返回所有 p 标签 (关注的用户)
+                        return latest.tags.filter(tag => tag[0] === 'p');
+                    } catch (error) {
+                        console.warn('获取当前关注列表失败:', error);
+                        return [];
+                    } finally {
+                        followPool.close(this.relays);
+                    }
+                }
+
                 // 收藏文章 - 更新完整收藏列表，使用 a 标签格式
                 async bookmarkArticle(articleId, title = '', authorPubkey, dTag) {
                     // 构造文章的 a 标签
@@ -966,15 +991,99 @@ npm run dev
                     }
                 }
 
-                // 关注作者
+                // 关注作者 - 更新完整关注列表
                 async followAuthor(authorPubkey, alias = '') {
-                    const event = this.createEvent(
-                        this.eventKinds.CONTACT_LIST,
-                        '',
-                        [['p', authorPubkey, '', alias]]
-                    );
+                    console.log('🔍 开始关注作者:', {
+                        authorPubkey: authorPubkey.substring(0, 16) + '...',
+                        alias: alias
+                    });
 
-                    return await this.publishEvent(event);
+                    try {
+                        // 1. 获取当前关注列表
+                        const currentFollows = await this.getCurrentFollowList();
+                        console.log('📋 当前关注列表:', currentFollows.length, '个');
+
+                        // 2. 检查是否已关注
+                        const isAlreadyFollowed = currentFollows.some(tag =>
+                            tag[0] === 'p' && tag[1] === authorPubkey
+                        );
+
+                        if (isAlreadyFollowed) {
+                            console.log('⚠️ 已经关注过该作者');
+                            return { success: false, reason: 'already_followed' };
+                        }
+
+                        // 3. 添加新关注到完整列表
+                        const newFollows = [
+                            ...currentFollows,
+                            ['p', authorPubkey, '', alias]
+                        ];
+
+                        console.log('📝 更新后的关注列表:', newFollows.length, '个');
+
+                        // 4. 创建新的关注事件（包含完整列表）
+                        const event = this.createEvent(
+                            this.eventKinds.CONTACT_LIST,
+                            '',
+                            newFollows
+                        );
+
+                        console.log('📝 关注事件详情:', {
+                            id: event.id.substring(0, 16) + '...',
+                            kind: event.kind,
+                            content: event.content,
+                            tags: event.tags,
+                            pubkey: event.pubkey.substring(0, 16) + '...',
+                            sig: event.sig ? '已签名' : '未签名'
+                        });
+
+                        // 5. 发布事件
+                        const result = await this.publishEvent(event);
+                        console.log('✅ 关注事件发布结果:', result);
+
+                        return result;
+
+                    } catch (error) {
+                        console.error('❌ 关注作者失败:', error);
+                        throw error;
+                    }
+                }
+
+                // 取消关注作者 - 更新完整关注列表
+                async unfollowAuthor(authorPubkey) {
+                    console.log('🔍 开始取消关注作者:', {
+                        authorPubkey: authorPubkey.substring(0, 16) + '...'
+                    });
+
+                    try {
+                        // 1. 获取当前关注列表
+                        const currentFollows = await this.getCurrentFollowList();
+                        console.log('📋 当前关注列表:', currentFollows.length, '个');
+
+                        // 2. 过滤掉要取消关注的作者
+                        const updatedFollows = currentFollows.filter(tag =>
+                            !(tag[0] === 'p' && tag[1] === authorPubkey)
+                        );
+
+                        console.log('📝 更新后的关注列表:', updatedFollows.length, '个');
+
+                        // 3. 创建新的关注事件（包含更新后的完整列表）
+                        const event = this.createEvent(
+                            this.eventKinds.CONTACT_LIST,
+                            '',
+                            updatedFollows
+                        );
+
+                        // 4. 发布事件
+                        const result = await this.publishEvent(event);
+                        console.log('✅ 取消关注事件发布结果:', result);
+
+                        return result;
+
+                    } catch (error) {
+                        console.error('❌ 取消关注失败:', error);
+                        throw error;
+                    }
                 }
 
                 // 评论文章
@@ -2600,16 +2709,54 @@ npm run dev
                     try {
                         const authorPubkey = button.dataset.authorPubkey;
                         const authorName = button.dataset.authorName;
+                        const isCurrentlyFollowed = button.classList.contains('active');
 
-                        await this.client.followAuthor(authorPubkey, authorName);
+                        console.log('🔍 关注操作:', {
+                            authorPubkey: authorPubkey.substring(0, 16) + '...',
+                            authorName: authorName,
+                            isCurrentlyFollowed: isCurrentlyFollowed
+                        });
 
-                        button.classList.add('active');
-                        button.textContent = '已关注';
+                        if (isCurrentlyFollowed) {
+                            // 取消关注
+                            console.log('📤 开始取消关注...');
+                            
+                            const result = await this.client.unfollowAuthor(authorPubkey);
+                            
+                            console.log('📤 取消关注结果:', result);
 
-                        this.showStatus('关注成功！', 'success');
+                            if (result && result.success) {
+                                button.classList.remove('active');
+                                button.textContent = '👥 关注';
+                                this.showStatus('已取消关注！', 'success');
+                            } else {
+                                throw new Error(result?.error || '取消关注失败');
+                            }
+                        } else {
+                            // 添加关注
+                            console.log('📤 开始关注作者...');
+                            
+                            const result = await this.client.followAuthor(authorPubkey, authorName);
+                            
+                            console.log('📤 关注结果:', result);
+
+                            if (result && result.success) {
+                                button.classList.add('active');
+                                button.textContent = '已关注';
+                                this.showStatus('关注成功！', 'success');
+                            } else if (result && result.reason === 'already_followed') {
+                                // 已经关注过了，更新UI状态
+                                button.classList.add('active');
+                                button.textContent = '已关注';
+                                this.showStatus('已在关注列表中！', 'info');
+                            } else {
+                                throw new Error(result?.error || '关注失败');
+                            }
+                        }
 
                     } catch (error) {
-                        this.showStatus('关注失败: ' + error.message, 'error');
+                        console.error('❌ 关注操作失败:', error);
+                        this.showStatus('关注操作失败: ' + error.message, 'error');
                     }
                 }
 
@@ -2756,6 +2903,9 @@ npm run dev
 
                     // 异步更新收藏状态
                     this.updateBookmarkStatuses();
+                    
+                    // 异步更新关注状态
+                    this.updateFollowStatuses();
                 }
 
                 // 异步更新所有文章的点赞状态
@@ -2823,6 +2973,40 @@ npm run dev
                         } catch (error) {
                             console.warn('更新收藏状态失败:', error);
                         }
+                    }
+                }
+
+                // 异步更新所有文章的关注状态
+                async updateFollowStatuses() {
+                    const followButtons = document.querySelectorAll('.follow-btn');
+
+                    for (const button of followButtons) {
+                        const authorPubkey = button.dataset.authorPubkey;
+                        try {
+                            const isFollowed = await this.checkFollowStatus(authorPubkey);
+                            if (isFollowed) {
+                                button.classList.add('active');
+                                button.textContent = '已关注';
+                            }
+                        } catch (error) {
+                            console.warn('更新关注状态失败:', error);
+                        }
+                    }
+                }
+
+                // 检查关注状态
+                async checkFollowStatus(authorPubkey) {
+                    try {
+                        // 使用客户端的 getCurrentFollowList 方法
+                        const currentFollows = await this.client.getCurrentFollowList();
+
+                        // 检查是否包含指定作者
+                        const isFollowed = currentFollows.some(tag => tag[0] === 'p' && tag[1] === authorPubkey);
+
+                        return isFollowed;
+                    } catch (error) {
+                        console.warn('查询关注状态失败:', error);
+                        return false;
                     }
                 }
 
