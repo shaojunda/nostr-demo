@@ -431,11 +431,12 @@
         .comment-item {
             background: #f4f8fb;
             border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(102,126,234,0.06);
+            box-shadow: 0 1px 4px rgba(102, 126, 234, 0.06);
             margin-bottom: 16px;
             padding: 16px 20px;
             position: relative;
         }
+
         .comment-item .reply-btn {
             background: #e0e7ff;
             color: #4f46e5;
@@ -446,15 +447,18 @@
             margin-top: 8px;
             cursor: pointer;
         }
+
         .comment-item .comment-actions {
             margin-top: 8px;
             display: flex;
             gap: 5px;
             align-items: center;
         }
+
         .comment-item .reply-box {
             margin-top: 10px;
         }
+
         .child-comment {
             background: #fff;
             margin-left: 24px;
@@ -2747,8 +2751,8 @@ npm run dev
                     }
                 }
 
-                                // 获取某篇文章的评论，分页
-                async getCommentsForArticle(article, since = 0, limit = 5) {
+                // 获取某篇文章的评论，分页
+                async getCommentsForArticle(article, since = 0, limit = 50) {
                     // 评论 kind 通常为 1111，tag A = 30023:pubkey:dTag
                     // 从文章标签中获取 d tag
                     const dTag = this.client.getTagValue(article.tags, 'd') || article.id;
@@ -2761,25 +2765,47 @@ npm run dev
                         aTag: aTag
                     });
 
-                    const filter = {
+                    // 首先查询有 A 标签的评论（根评论）
+                    const aTagFilter = {
                         kinds: [this.client.eventKinds.COMMENT],
                         '#A': [aTag],
                         since: since,
                         limit: limit
                     };
 
-                    console.log('🔍 查询评论过滤器:', filter);
+                    console.log('🔍 查询 A 标签评论过滤器:', aTagFilter);
 
-                    // 一次性查询所有中继
-                    let allComments = [];
+                    let aTagComments = [];
                     try {
-                        allComments = await this.client.pool.querySync(this.client.relays, filter, { maxWait: 10000 });
+                        aTagComments = await this.client.pool.querySync(this.client.relays, aTagFilter, { maxWait: 10000 });
                     } catch (e) {
-                        console.warn('查询评论失败:', e);
+                        console.warn('查询 A 标签评论失败:', e);
                     }
 
-                    console.log('🔍 调试评论查询结果:');
-                    console.log('allComments:', allComments);
+                    console.log('🔍 A 标签评论结果:', aTagComments);
+
+                    // 然后查询指向这些评论的回复
+                    const replyFilter = {
+                        kinds: [this.client.eventKinds.COMMENT],
+                        '#e': aTagComments.map(c => c.id),
+                        since: since,
+                        limit: limit * 2
+                    };
+
+                    console.log('🔍 查询回复评论过滤器:', replyFilter);
+
+                    let replyComments = [];
+                    try {
+                        replyComments = await this.client.pool.querySync(this.client.relays, replyFilter, { maxWait: 10000 });
+                    } catch (e) {
+                        console.warn('查询回复评论失败:', e);
+                    }
+
+                    console.log('🔍 回复评论结果:', replyComments);
+
+                    // 合并所有评论
+                    const allComments = [...aTagComments, ...replyComments];
+                    console.log('🔍 合并后的所有评论:', allComments);
 
                     // 去重
                     const unique = Array.from(new Map(allComments.map(e => [e.id, e])).values());
@@ -2805,7 +2831,7 @@ npm run dev
 
                     // 评论分页参数
                     this.commentPage = 0;
-                    this.pageSize = 5;
+                    this.pageSize = 50;
                     this.allCommentsLoaded = false;
                     this.comments = [];
 
@@ -2832,7 +2858,7 @@ npm run dev
 
                         // 构建两层展平评论结构
                         const commentMap = new Map();
-                        comments.forEach(c => commentMap.set(c.id, {...c, children: []}));
+                        comments.forEach(c => commentMap.set(c.id, { ...c, children: [] }));
 
                         const rootComments = [];
                         const allReplies = [];
@@ -3080,40 +3106,77 @@ npm run dev
 
                     // 构建两层展平评论结构
                     const commentMap = new Map();
-                    this.comments.forEach(c => commentMap.set(c.id, {...c, children: []}));
+                    this.comments.forEach(c => commentMap.set(c.id, { ...c, children: [] }));
 
                     const rootComments = [];
                     const allReplies = [];
 
                     // 分类评论：根评论 vs 回复评论
-                    this.comments.forEach(c => {
+                    console.log('🔍 开始分类评论，总评论数:', this.comments.length);
+                    this.comments.forEach((c, index) => {
+                        console.log(`🔍 处理第 ${index + 1} 个评论:`, {
+                            id: c.id,
+                            content: c.content,
+                            tags: c.tags
+                        });
+
                         const eTag = c.tags.find(t => t[0] === 'e');
                         const aTag = c.tags.find(t => t[0] === 'A');
 
-                        if (eTag && aTag) {
+                        console.log('📋 标签信息:', {
+                            eTag: eTag,
+                            aTag: aTag,
+                            articleId: article.id
+                        });
+
+                        // 检查是否有 e 标签
+                        if (eTag) {
                             const eventId = eTag[1];
-                            const articleATag = aTag[1];
 
                             // 检查 e tag 是否指向文章ID
                             if (eventId === article.id) {
                                 // e tag 指向文章ID，这是根评论
+                                console.log('✅ 识别为根评论 (e tag 指向文章):', c.content);
                                 rootComments.push(commentMap.get(c.id));
                             } else {
-                                // e tag 指向其他评论ID，这是回复评论
-                                const currentComment = commentMap.get(c.id);
-                                currentComment.isReply = true;
-                                currentComment.parentId = eventId;
+                                // 检查 e tag 是否指向文章的 E 标签值
+                                const articleETag = article.tags.find(t => t[0] === 'E');
+                                if (articleETag && eventId === articleETag[1]) {
+                                    // e tag 指向文章的 E 标签值，这也是根评论
+                                    console.log('✅ 识别为根评论 (e tag 指向文章的 E 标签):', c.content);
+                                    rootComments.push(commentMap.get(c.id));
+                                } else {
+                                    // e tag 指向其他评论ID，这是回复评论
+                                    console.log('🔄 识别为回复评论 (e tag 指向其他评论):', c.content, '指向:', eventId);
+                                    const currentComment = commentMap.get(c.id);
+                                    currentComment.isReply = true;
+                                    currentComment.parentId = eventId;
 
-                                // 设置回复目标信息
-                                const parentComment = commentMap.get(eventId);
-                                if (parentComment) {
-                                    currentComment.replyToAuthor = parentComment.pubkey;
-                                    currentComment.replyToContent = parentComment.content.substring(0, 50) + '...';
+                                    // 设置回复目标信息
+                                    const parentComment = commentMap.get(eventId);
+                                    if (parentComment) {
+                                        currentComment.replyToAuthor = parentComment.pubkey;
+                                        currentComment.replyToContent = parentComment.content.substring(0, 50) + '...';
+                                    }
+
+                                    allReplies.push(currentComment);
                                 }
-
-                                allReplies.push(currentComment);
                             }
+                        } else if (aTag) {
+                            // 只有 A 标签，没有 e 标签，这可能是根评论
+                            console.log('✅ 识别为根评论 (只有 A 标签):', c.content);
+                            rootComments.push(commentMap.get(c.id));
+                        } else {
+                            // 既没有 e 标签也没有 A 标签，可能是其他类型的评论
+                            console.log('⚠️ 评论既没有 e 标签也没有 A 标签:', c.id, c.content);
+                            rootComments.push(commentMap.get(c.id));
                         }
+                    });
+
+                    console.log('📊 分类结果:', {
+                        rootComments: rootComments.length,
+                        allReplies: allReplies.length,
+                        rootCommentsContent: rootComments.map(c => c.content)
                     });
 
                     // 将所有回复按时间排序后添加到对应的根评论下
@@ -3145,13 +3208,13 @@ npm run dev
                     // 渲染两层展平结构
                     function renderFlatComments(list) {
                         return list.map(c => {
-                            const authorName = this.client.truncateKey(c.pubkey);
-                            const timeStr = this.client.formatTime(c.created_at);
+                            const authorName = app.client.truncateKey(c.pubkey);
+                            const timeStr = app.client.formatTime(c.created_at);
 
                             let html = `
                                 <div class="comment-item" data-comment-id="${c.id}">
                                     <div class="comment-author">${authorName}</div>
-                                    <div class="comment-content">${this.escapeHtml(c.content)}</div>
+                                    <div class="comment-content">${app.escapeHtml(c.content)}</div>
                                     <div class="comment-time">${timeStr}</div>
                                     <div class="comment-actions">
                                         <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
@@ -3183,15 +3246,15 @@ npm run dev
                             if (c.children && c.children.length > 0) {
                                 html += '<div class="replies-section" style="margin-left: 20px; margin-top: 10px;">';
                                 c.children.forEach(reply => {
-                                    const replyAuthorName = this.client.truncateKey(reply.pubkey);
-                                    const replyTimeStr = this.client.formatTime(reply.created_at);
+                                    const replyAuthorName = app.client.truncateKey(reply.pubkey);
+                                    const replyTimeStr = app.client.formatTime(reply.created_at);
                                     const replyTarget = reply.replyToAuthor ?
-                                        `回复 @${this.client.truncateKey(reply.replyToAuthor)}` : '';
+                                        `回复 @${app.client.truncateKey(reply.replyToAuthor)}` : '';
 
                                     html += `
                                         <div class="comment-item child-comment" data-comment-id="${reply.id}">
                                             <div class="comment-author">${replyAuthorName} ${replyTarget}</div>
-                                            <div class="comment-content">${this.escapeHtml(reply.content)}</div>
+                                            <div class="comment-content">${app.escapeHtml(reply.content)}</div>
                                             <div class="comment-time">${replyTimeStr}</div>
                                             <div class="comment-actions">
                                                 <button class="reply-btn" data-comment-id="${reply.id}" data-parent-pubkey="${reply.pubkey}">回复</button>
@@ -3227,7 +3290,7 @@ npm run dev
                         }).join('');
                     }
 
-                    commentList.innerHTML = renderFlatComments.call(this, rootComments);
+                    commentList.innerHTML = renderFlatComments(rootComments);
 
                     // 按钮显示/隐藏
                     const moreBtn = document.getElementById('load-more-comments');
@@ -3272,19 +3335,36 @@ npm run dev
                 // 查找回复评论的根评论
                 findRootComment(reply, commentMap, allComments, article) {
                     const parentId = reply.parentId;
-                    if (!parentId) return null;
+                    if (!parentId) {
+                        console.log('❌ 回复没有 parentId:', reply.id);
+                        return null;
+                    }
 
                     const parent = commentMap.get(parentId);
-                    if (!parent) return null;
+                    if (!parent) {
+                        console.log('❌ 找不到父评论:', parentId, '回复ID:', reply.id);
+                        return null;
+                    }
+
+                    console.log('🔍 检查父评论:', {
+                        parentId: parentId,
+                        parentContent: parent.content,
+                        parentTags: parent.tags
+                    });
 
                     // 检查父评论是否是根评论（e tag 指向文章ID）
                     const parentETag = parent.tags.find(t => t[0] === 'e');
-                    if (parentETag && parentETag[1] === article.id) {
-                        // 父评论的 e tag 指向文章ID，说明是根评论
-                        return parent;
+                    if (parentETag) {
+                        console.log('📋 父评论的 e tag:', parentETag[1], '文章ID:', article.id);
+                        if (parentETag[1] === article.id) {
+                            // 父评论的 e tag 指向文章ID，说明是根评论
+                            console.log('✅ 找到根评论:', parent.id, parent.content);
+                            return parent;
+                        }
                     }
 
                     // 如果父评论也是回复，继续向上查找
+                    console.log('🔄 父评论也是回复，继续向上查找');
                     return this.findRootComment(parent, commentMap, allComments, article);
                 }
             }
