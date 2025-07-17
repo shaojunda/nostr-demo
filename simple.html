@@ -904,9 +904,19 @@ npm run dev
                 }
 
                 // 获取时间线 - 使用更健壮的方法
-                async getTimeline(limit = 20) {
+                async getTimeline(limit = 20, timelineType = 'global') {
                     try {
                         console.log(`开始从 ${this.relays.length} 个中继获取时间线数据...`);
+
+                        // 根据时间线类型动态调整查询的 kind
+                        let kinds = [];
+                        if (timelineType === 'global') {
+                            // 全局时间线：显示所有内容（文章和评论）
+                            kinds = [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM];
+                        } else {
+                            // 其他时间线：只显示文章
+                            kinds = [this.eventKinds.LONG_FORM];
+                        }
 
                         const allEvents = [];
                         const relayResults = new Map();
@@ -917,17 +927,16 @@ npm run dev
                                 console.log(`正在查询中继: ${relay}`);
 
                                 console.log(`🔍 正在查询中继 ${relay}，查询条件:`, {
-                                    kinds: [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM, this.eventKinds.COMMENT],
+                                    kinds: kinds,
                                     limit: limit * 2,
                                     timeout: 8000
                                 });
 
                                 const events = await this.pool.querySync([relay], {
-                                    kinds: [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM, this.eventKinds.COMMENT],
+                                    kinds: kinds,
                                     limit: limit * 2
                                 }, {
-                                    timeout: 8000 // 每个中继8秒超时
-                                });
+                                    timeout:8000                   });
 
                                 console.log(`✅ 中继 ${relay} 返回 ${events.length} 个事件`);
                                 relayResults.set(relay, { success: true, count: events.length });
@@ -977,7 +986,7 @@ npm run dev
                                 console.log(`正在从 ${relay} 查询用户事件`);
 
                                 const events = await this.pool.querySync([relay], {
-                                    kinds: [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM, this.eventKinds.COMMENT],
+                                    kinds: [this.eventKinds.LONG_FORM], // 只查询文章，不包含评论
                                     authors: [pubkey],
                                     limit: limit
                                 }, {
@@ -1072,7 +1081,7 @@ npm run dev
                                 console.log(`正在从 ${relay} 获取关注用户事件`);
 
                                 const events = await this.pool.querySync([relay], {
-                                    kinds: [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM, this.eventKinds.COMMENT],
+                                    kinds: [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM],
                                     authors: followedPubkeys,
                                     limit: limit * 2
                                 }, {
@@ -2119,7 +2128,7 @@ npm run dev
                         let timeline;
                         switch (timelineType) {
                             case 'global':
-                                timeline = await this.client.getTimeline(50);
+                                timeline = await this.client.getTimeline(50, 'global');
                                 break;
                             case 'followed':
                                 timeline = await this.client.getFollowedTimeline(50);
@@ -2131,7 +2140,7 @@ npm run dev
                                 timeline = await this.client.getUserTimeline(this.client.publicKey, 50);
                                 break;
                             default:
-                                timeline = await this.client.getTimeline(50);
+                                timeline = await this.client.getTimeline(50, 'global');
                         }
 
                         this.articles = timeline;
@@ -2741,38 +2750,120 @@ npm run dev
                     let allCommentsLoaded = false;
                     let comments = [];
 
+                    // 查找回复评论的根评论
+                    function findRootComment(reply, commentMap, allComments) {
+                        const parentId = reply.parentId;
+                        if (!parentId) return null;
+
+                        const parent = commentMap.get(parentId);
+                        if (!parent) return null;
+
+                        // 如果父评论不是回复（即是根评论），则返回它
+                        if (!parent.isReply) {
+                            return parent;
+                        }
+
+                        // 如果父评论也是回复，继续向上查找
+                        return findRootComment(parent, commentMap, allComments);
+                    }
+
                     // 评论区容器
                     const renderComments = async () => {
                         const commentList = document.getElementById('comment-list');
-                        // 构建评论树
+
+                        // 构建两层展平评论结构
                         const commentMap = new Map();
                         comments.forEach(c => commentMap.set(c.id, {...c, children: []}));
-                        const roots = [];
+
+                        const rootComments = [];
+                        const allReplies = [];
+
+                        // 分类评论：根评论 vs 回复评论
                         comments.forEach(c => {
                             const parentId = (c.tags.find(t => t[0] === 'e') || [])[1];
                             if (parentId && commentMap.has(parentId)) {
-                                commentMap.get(parentId).children.push(commentMap.get(c.id));
+                                const currentComment = commentMap.get(c.id);
+                                currentComment.isReply = true;
+                                currentComment.parentId = parentId;
+
+                                // 设置回复目标信息
+                                const parentComment = commentMap.get(parentId);
+                                if (parentComment) {
+                                    currentComment.replyToAuthor = parentComment.pubkey;
+                                    currentComment.replyToContent = parentComment.content.substring(0, 50) + '...';
+                                }
+
+                                allReplies.push(currentComment);
                             } else {
-                                roots.push(commentMap.get(c.id));
+                                // 检查是否是对文章的直接评论（包含 A 标签）
+                                const hasArticleTag = c.tags.some(tag => tag[0] === 'A');
+                                if (hasArticleTag) {
+                                    rootComments.push(commentMap.get(c.id));
+                                }
                             }
                         });
-                        // 递归渲染
-                        function renderTree(list, level = 0) {
-                            return list.map(c => `
-                                <div class="comment-item${level > 0 ? ' child-comment' : ''}" data-comment-id="${c.id}">
-                                    <div class="comment-author">${app.client.truncateKey(c.pubkey)}</div>
-                                    <div class="comment-content">${app.escapeHtml(c.content)}</div>
-                                    <div class="comment-time">${app.client.formatTime(c.created_at)}</div>
-                                    <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
-                                    <div class="reply-box" id="reply-box-${c.id}" style="display:none;">
-                                        <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
-                                        <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
-                                    </div>
-                                    ${c.children && c.children.length > 0 ? renderTree(c.children, level+1) : ''}
-                                </div>
-                            `).join('');
+
+                        // 将所有回复按时间排序后添加到对应的根评论下
+                        allReplies.sort((a, b) => a.created_at - b.created_at);
+
+                        // 找到每个回复应该归属的根评论
+                        allReplies.forEach(reply => {
+                            const rootComment = findRootComment(reply, commentMap, comments);
+                            if (rootComment) {
+                                rootComment.children.push(reply);
+                            }
+                        });
+
+                        // 渲染两层展平结构
+                        function renderFlatComments(list) {
+                            return list.map(c => {
+                                const authorName = app.client.truncateKey(c.pubkey);
+                                const timeStr = app.client.formatTime(c.created_at);
+
+                                let html = `
+                                    <div class="comment-item" data-comment-id="${c.id}">
+                                        <div class="comment-author">${authorName}</div>
+                                        <div class="comment-content">${app.escapeHtml(c.content)}</div>
+                                        <div class="comment-time">${timeStr}</div>
+                                        <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
+                                        <div class="reply-box id="reply-box-${c.id}" style="display:none;">
+                                            <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
+                                            <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
+                                        </div>
+                                `;
+
+                                // 渲染第二层回复（所有回复都展平显示）
+                                if (c.children && c.children.length > 0) {
+                                    html += '<div class="replies-section" style="margin-left: 20px; margin-top: 10px;">';
+                                    c.children.forEach(reply => {
+                                        const replyAuthorName = app.client.truncateKey(reply.pubkey);
+                                        const replyTimeStr = app.client.formatTime(reply.created_at);
+                                        const replyTarget = reply.replyToAuthor ?
+                                            `回复 @${app.client.truncateKey(reply.replyToAuthor)}` : '';
+
+                                        html += `
+                                            <div class="comment-item child-comment" data-comment-id="${reply.id}">
+                                                <div class="comment-author">${replyAuthorName} ${replyTarget}</div>
+                                                <div class="comment-content">${app.escapeHtml(reply.content)}</div>
+                                                <div class="comment-time">${replyTimeStr}</div>
+                                                <button class="reply-btn" data-comment-id="${reply.id}" data-parent-pubkey="${reply.pubkey}">回复</button>
+                                                <div class="reply-box id=reply-box-${reply.id}" style="display:none;">
+                                                    <textarea id="reply-input-${reply.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
+                                                    <button class="send-reply-btn" data-parent-id="${reply.id}" data-parent-pubkey="${reply.pubkey}" style="margin-top:4px;">发送</button>
+                                                </div>
+                                            </div>
+                                        `;
+                                    });
+                                    html += '</div>';
+                                }
+
+                                html += '</div>';
+                                return html;
+                            }).join('');
                         }
-                        commentList.innerHTML = renderTree(roots);
+
+                        commentList.innerHTML = renderFlatComments(rootComments);
+
                         // 按钮显示/隐藏
                         const moreBtn = document.getElementById('load-more-comments');
                         if (allCommentsLoaded) {
@@ -2782,6 +2873,7 @@ npm run dev
                             moreBtn.style.display = 'block';
                             document.getElementById('no-more-comments').style.display = 'none';
                         }
+
                         // 绑定回复按钮
                         commentList.querySelectorAll('.reply-btn').forEach(btn => {
                             btn.onclick = () => {
@@ -2789,6 +2881,7 @@ npm run dev
                                 box.style.display = box.style.display === 'none' ? 'block' : 'none';
                             };
                         });
+
                         // 绑定发送按钮
                         commentList.querySelectorAll('.send-reply-btn').forEach(btn => {
                             btn.onclick = async () => {
