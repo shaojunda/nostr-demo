@@ -2696,8 +2696,8 @@ npm run dev
                     }
                 }
 
-                // 获取某篇文章的评论，分页
-                async getCommentsForArticle(article, offset = 0, limit = 5) {
+                                // 获取某篇文章的评论，分页
+                async getCommentsForArticle(article, since = 0, limit = 5) {
                     // 评论 kind 通常为 1111，tag A = 30023:pubkey:dTag
                     // 从文章标签中获取 d tag
                     const dTag = this.client.getTagValue(article.tags, 'd') || article.id;
@@ -2713,7 +2713,8 @@ npm run dev
                     const filter = {
                         kinds: [this.client.eventKinds.COMMENT],
                         '#A': [aTag],
-                        limit: offset + limit
+                        since: since,
+                        limit: limit
                     };
 
                     console.log('🔍 查询评论过滤器:', filter);
@@ -2733,8 +2734,7 @@ npm run dev
                     const unique = Array.from(new Map(allComments.map(e => [e.id, e])).values());
                     // 按时间升序
                     unique.sort((a, b) => a.created_at - b.created_at);
-                    // 分页
-                    return unique.slice(offset, offset + limit);
+                    return unique;
                 }
 
                 async showArticleViewer(articleId) {
@@ -2984,7 +2984,12 @@ npm run dev
                 }
 
                 async loadCommentsForArticle(article) {
-                    const newComments = await this.getCommentsForArticle(article, this.commentPage * this.pageSize, this.pageSize);
+                    // 计算 since 时间戳，用于分页
+                    // 第一次加载时 since = 0，后续加载时使用最新评论的时间戳
+                    const since = this.commentPage === 0 ? 0 :
+                        (this.comments.length > 0 ? Math.max(...this.comments.map(c => c.created_at)) : 0);
+
+                    const newComments = await this.getCommentsForArticle(article, since, this.pageSize);
                     if (newComments.length < this.pageSize) this.allCommentsLoaded = true;
                     this.comments = this.comments.concat(newComments);
                     this.commentPage++;
