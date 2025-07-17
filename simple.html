@@ -698,7 +698,7 @@ npm run dev
                     return signedEvent;
                 }
 
-                // 发布事件 - 使用更健壮的方法
+                // 发布事件 - 使用独立的 SimplePool 避免超时
                 async publishEvent(event) {
                     if (!event.id || !event.sig) {
                         throw new Error('事件未正确签名');
@@ -710,33 +710,24 @@ npm run dev
                         relays: this.relays.length
                     });
 
-                    const results = [];
-                    let successCount = 0;
+                    // 使用独立的 SimplePool 进行发布，避免与查询冲突
+                    const publishPool = new SimplePool();
 
-                    // 逐个尝试发布到每个中继
-                    for (const relay of this.relays) {
-                        try {
-                            console.log(`正在发布到中继: ${relay}`);
+                    try {
+                        console.log(`正在发布到 ${this.relays.length} 个中继...`);
 
-                            await this.pool.publish([relay], event);
+                        const publishPromises = publishPool.publish(this.relays, event);
+                        await Promise.all(publishPromises);
 
-                            console.log(`✅ 成功发布到中继: ${relay}`);
-                            results.push({ relay, success: true });
-                            successCount++;
+                        console.log(`✅ 成功发布到中继`);
+                        return { event, success: true, relayCount: this.relays.length };
 
-                        } catch (error) {
-                            console.warn(`❌ 发布到中继 ${relay} 失败:`, error.message);
-                            results.push({ relay, success: false, error: error.message });
-                            // 继续尝试下一个中继
-                        }
-                    }
-
-                    console.log(`发布完成: ${successCount}/${this.relays.length} 个中继成功`);
-
-                    if (successCount > 0) {
-                        return { event, success: true, relayCount: successCount, results };
-                    } else {
-                        return { event, success: false, error: '所有中继都发布失败', results };
+                    } catch (error) {
+                        console.error(`❌ 发布失败:`, error.message);
+                        return { event, success: false, error: error.message };
+                    } finally {
+                        // 发布完成后关闭独立的 pool
+                        publishPool.close(this.relays);
                     }
                 }
 
@@ -837,18 +828,142 @@ npm run dev
                     }
                 }
 
-                // 收藏文章
-                async bookmarkArticle(articleId, title = '') {
-                    const event = this.createEvent(
-                        this.eventKinds.BOOKMARK,
-                        '',
-                        [
-                            ['e', articleId],
-                            ['title', title || '我的收藏']
-                        ]
-                    );
+                // 获取当前收藏列表
+                async getCurrentBookmarks() {
+                    // 使用独立的 SimplePool 避免状态冲突
+                    const bookmarkPool = new SimplePool();
+                    try {
+                        const bookmarkEvents = await bookmarkPool.querySync(this.relays, {
+                            kinds: [this.eventKinds.BOOKMARK],
+                            authors: [this.publicKey],
+                            limit: 1
+                        }, { maxWait: 10000 });
 
-                    return await this.publishEvent(event);
+                        if (bookmarkEvents.length === 0) return [];
+
+                        // 获取最新的收藏事件
+                        const latest = bookmarkEvents.sort((a, b) => b.created_at - a.created_at)[0];
+                        // 返回所有收藏标签 (支持 e 标签和 a 标签)
+                        return latest.tags.filter(tag => tag[0] === 'e' || tag[0] === 'a');
+                    } catch (error) {
+                        console.warn('获取当前收藏列表失败:', error);
+                        return [];
+                    } finally {
+                        bookmarkPool.close(this.relays);
+                    }
+                }
+
+                // 收藏文章 - 更新完整收藏列表，使用 a 标签格式
+                async bookmarkArticle(articleId, title = '', authorPubkey, dTag) {
+                    // 构造文章的 a 标签
+                    const articleATag = `30023:${authorPubkey}:${dTag}`;
+
+                    console.log('🔍 开始收藏文章:', {
+                        articleId: articleId.substring(0, 16) + '...',
+                        title: title,
+                        authorPubkey: authorPubkey.substring(0, 16) + '...',
+                        dTag: dTag,
+                        articleATag: articleATag
+                    });
+
+                    try {
+                        // 1. 获取当前收藏列表
+                        const currentBookmarks = await this.getCurrentBookmarks();
+                        console.log('📋 当前收藏列表:', currentBookmarks.length, '个');
+
+                        // 2. 检查是否已收藏 (检查 a 标签)
+                        const isAlreadyBookmarked = currentBookmarks.some(tag =>
+                            tag[0] === 'a' && tag[1] === articleATag
+                        );
+
+                        if (isAlreadyBookmarked) {
+                            console.log('⚠️ 已经收藏过该文章');
+                            return { success: false, reason: 'already_bookmarked' };
+                        }
+
+                        // 3. 添加新收藏到完整列表 (使用 a 标签格式)
+                        const newBookmarks = [
+                            ...currentBookmarks,
+                            ['a', articleATag, '']
+                        ];
+
+                        console.log('📝 更新后的收藏列表:', newBookmarks.length, '个');
+
+                        // 4. 创建新的收藏事件（包含完整列表）
+                        const event = this.createEvent(
+                            this.eventKinds.BOOKMARK,
+                            '',
+                            [
+                                ...newBookmarks
+                            ]
+                        );
+
+                        console.log('📝 收藏事件详情:', {
+                            id: event.id.substring(0, 16) + '...',
+                            kind: event.kind,
+                            content: event.content,
+                            tags: event.tags,
+                            pubkey: event.pubkey.substring(0, 16) + '...',
+                            sig: event.sig ? '已签名' : '未签名'
+                        });
+
+                        // 5. 发布事件
+                        const result = await this.publishEvent(event);
+                        console.log('✅ 收藏事件发布结果:', result);
+
+                        return result;
+
+                    } catch (error) {
+                        console.error('❌ 收藏文章失败:', error);
+                        throw error;
+                    }
+                }
+
+                // 取消收藏 - 更新完整收藏列表，使用 a 标签格式
+                async unbookmarkArticle(articleId, authorPubkey, dTag) {
+                    // 构造文章的 a 标签
+                    const articleATag = `30023:${authorPubkey}:${dTag}`;
+
+                    console.log('🔍 开始取消收藏:', {
+                        articleId: articleId.substring(0, 16) + '...',
+                        authorPubkey: authorPubkey.substring(0, 16) + '...',
+                        dTag: dTag,
+                        articleATag: articleATag
+                    });
+
+                    try {
+                        // 1. 获取当前收藏列表
+                        const currentBookmarks = await this.getCurrentBookmarks();
+                        console.log('📋 当前收藏列表:', currentBookmarks.length, '个');
+
+                        // 2. 过滤掉要取消收藏的文章 (使用 a 标签)
+                        const updatedBookmarks = currentBookmarks.filter(tag =>
+                            !(tag[0] === 'a' && tag[1] === articleATag)
+                        );
+
+                        console.log('📝 更新后的收藏列表:', updatedBookmarks.length, '个');
+
+                        // 3. 创建新的收藏事件（包含更新后的完整列表）
+                        const event = this.createEvent(
+                            this.eventKinds.BOOKMARK,
+                            '',
+                            [
+                                ['title', '我的收藏'],
+                                ['description', '收藏的文章'],
+                                ...updatedBookmarks
+                            ]
+                        );
+
+                        // 4. 发布事件
+                        const result = await this.publishEvent(event);
+                        console.log('✅ 取消收藏事件发布结果:', result);
+
+                        return result;
+
+                    } catch (error) {
+                        console.error('❌ 取消收藏失败:', error);
+                        throw error;
+                    }
                 }
 
                 // 关注作者
@@ -1657,7 +1772,8 @@ npm run dev
                         <div class="tabs">
                             <button class="tab active" data-tab="timeline">时间线</button>
                             <button class="tab" data-tab="publish">发布文章</button>
-                                <button class="tab" data-tab="keys">密钥管理</button>
+                            <button class="tab" data-tab="favorites">我的收藏</button>
+                            <button class="tab" data-tab="keys">密钥管理</button>
                             <button class="tab" data-tab="relays">中继管理</button>
                         </div>
 
@@ -1685,6 +1801,15 @@ npm run dev
 
                             <div id="timeline-content">
                                 <div class="loading">时间线功能演示中...</div>
+                            </div>
+                        </div>
+
+                        <div id="favorites-tab" class="tab-content">
+                            <div style="margin-bottom: 20px;">
+                                <h2>我的收藏</h2>
+                                <div id="favorites-content">
+                                    <div class="loading">正在加载收藏文章...</div>
+                                </div>
                             </div>
                         </div>
 
@@ -1896,15 +2021,23 @@ npm run dev
                     // 文章操作
                     document.addEventListener('click', async (e) => {
                         if (e.target.classList.contains('like-btn')) {
+                            e.preventDefault();
+                            e.stopPropagation();
                             await this.handleLikeArticle(e.target);
                         }
                         if (e.target.classList.contains('bookmark-btn')) {
+                            e.preventDefault();
+                            e.stopPropagation();
                             await this.handleBookmarkArticle(e.target);
                         }
                         if (e.target.classList.contains('follow-btn')) {
+                            e.preventDefault();
+                            e.stopPropagation();
                             await this.handleFollowAuthor(e.target);
                         }
                         if (e.target.classList.contains('comment-btn')) {
+                            e.preventDefault();
+                            e.stopPropagation();
                             await this.handleCommentArticle(e.target);
                         }
                         if (e.target.classList.contains('show-json-btn')) {
@@ -1988,6 +2121,11 @@ npm run dev
                     const activeContent = document.getElementById(tabType + '-tab');
                     if (activeContent) {
                         activeContent.classList.add('active');
+                    }
+
+                    // 如果切换到收藏tab，加载收藏文章
+                    if (tabType === 'favorites') {
+                        this.loadFavoritesArticles();
                     }
 
                     // 如果切换到非时间线tab，确保文章查看器被隐藏
@@ -2372,16 +2510,89 @@ npm run dev
                     try {
                         const articleId = button.dataset.articleId;
                         const title = button.dataset.title;
+                        const authorPubkey = button.dataset.authorPubkey;
+                        const dTag = button.dataset.dTag;
+                        const isCurrentlyBookmarked = button.classList.contains('active');
 
-                        await this.client.bookmarkArticle(articleId, title);
+                        console.log('🔍 收藏操作:', {
+                            articleId: articleId.substring(0, 16) + '...',
+                            title: title,
+                            authorPubkey: authorPubkey.substring(0, 16) + '...',
+                            dTag: dTag,
+                            isCurrentlyBookmarked: isCurrentlyBookmarked
+                        });
 
-                        button.classList.add('active');
-                        button.textContent = '已收藏';
+                        if (isCurrentlyBookmarked) {
+                            // 取消收藏
+                            console.log('📤 开始取消收藏...');
 
-                        this.showStatus('收藏成功！', 'success');
+                            const result = await this.client.unbookmarkArticle(articleId, authorPubkey, dTag);
+
+                            console.log('📤 取消收藏结果:', result);
+
+                            if (result && result.success) {
+                                button.classList.remove('active');
+                                button.textContent = '📚 收藏';
+                                this.showStatus('已取消收藏！', 'success');
+
+                                // 更新本地缓存
+                                const cachedBookmarks = localStorage.getItem('bookmarked-articles');
+                                if (cachedBookmarks) {
+                                    try {
+                                        const bookmarkedArticles = JSON.parse(cachedBookmarks);
+                                        const index = bookmarkedArticles.indexOf(articleId);
+                                        if (index > -1) {
+                                            bookmarkedArticles.splice(index, 1);
+                                            localStorage.setItem('bookmarked-articles', JSON.stringify(bookmarkedArticles));
+                                        }
+                                    } catch (e) {
+                                        console.warn('更新收藏缓存失败:', e);
+                                    }
+                                }
+                            } else {
+                                throw new Error(result?.error || '取消收藏失败');
+                            }
+                        } else {
+                            // 添加收藏
+                            console.log('📤 开始发布收藏事件...');
+
+                            const result = await this.client.bookmarkArticle(articleId, title, authorPubkey, dTag);
+
+                            console.log('📤 收藏事件发布结果:', result);
+
+                            if (result && result.success) {
+                                button.classList.add('active');
+                                button.textContent = '已收藏';
+                                this.showStatus('收藏成功！', 'success');
+
+                                // 更新本地缓存
+                                const cachedBookmarks = localStorage.getItem('bookmarked-articles');
+                                const bookmarkedArticles = cachedBookmarks ? JSON.parse(cachedBookmarks) : [];
+                                if (!bookmarkedArticles.includes(articleId)) {
+                                    bookmarkedArticles.push(articleId);
+                                    localStorage.setItem('bookmarked-articles', JSON.stringify(bookmarkedArticles));
+                                }
+                            } else if (result && result.reason === 'already_bookmarked') {
+                                // 已经收藏过了，更新UI状态
+                                button.classList.add('active');
+                                button.textContent = '已收藏';
+                                this.showStatus('文章已在收藏列表中！', 'info');
+
+                                // 更新本地缓存
+                                const cachedBookmarks = localStorage.getItem('bookmarked-articles');
+                                const bookmarkedArticles = cachedBookmarks ? JSON.parse(cachedBookmarks) : [];
+                                if (!bookmarkedArticles.includes(articleId)) {
+                                    bookmarkedArticles.push(articleId);
+                                    localStorage.setItem('bookmarked-articles', JSON.stringify(bookmarkedArticles));
+                                }
+                            } else {
+                                throw new Error(result?.error || '发布失败');
+                            }
+                        }
 
                     } catch (error) {
-                        this.showStatus('收藏失败: ' + error.message, 'error');
+                        console.error('❌ 收藏操作失败:', error);
+                        this.showStatus('收藏操作失败: ' + error.message, 'error');
                     }
                 }
 
@@ -2506,7 +2717,7 @@ npm run dev
                                 <button class="like-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}">
                                     👍 点赞
                                 </button>
-                                <button class="bookmark-btn" data-article-id="${event.id}" data-title="${this.escapeHtml(title)}">
+                                <button class="bookmark-btn" data-article-id="${event.id}" data-title="${this.escapeHtml(title)}" data-author-pubkey="${event.pubkey}" data-d-tag="${this.client.getTagValue(event.tags, 'd') || event.id}">
                                     📚 收藏
                                 </button>
                                 <button class="follow-btn" data-author-pubkey="${event.pubkey}" data-author-name="${this.client.truncateKey(event.pubkey)}">
@@ -2542,6 +2753,9 @@ npm run dev
 
                     // 异步更新点赞状态
                     this.updateLikeStatuses();
+
+                    // 异步更新收藏状态
+                    this.updateBookmarkStatuses();
                 }
 
                 // 异步更新所有文章的点赞状态
@@ -2589,6 +2803,79 @@ npm run dev
                     } catch (error) {
                         console.warn('查询点赞状态失败，使用缓存状态:', error);
                         return cachedLiked;
+                    }
+                }
+
+                // 异步更新所有文章的收藏状态
+                async updateBookmarkStatuses() {
+                    const bookmarkButtons = document.querySelectorAll('.bookmark-btn');
+
+                    for (const button of bookmarkButtons) {
+                        const articleId = button.dataset.articleId;
+                        const authorPubkey = button.dataset.authorPubkey;
+                        const dTag = button.dataset.dTag;
+                        try {
+                            const isBookmarked = await this.checkBookmarkStatus(articleId, authorPubkey, dTag);
+                            if (isBookmarked) {
+                                button.classList.add('active');
+                                button.textContent = '已收藏';
+                            }
+                        } catch (error) {
+                            console.warn('更新收藏状态失败:', error);
+                        }
+                    }
+                }
+
+                                // 检查收藏状态 (支持 a 标签格式)
+                async checkBookmarkStatus(articleId, authorPubkey, dTag) {
+                    // 构造文章的 a 标签
+                    const articleATag = `30023:${authorPubkey}:${dTag}`;
+
+                    // 首先检查本地缓存
+                    const cachedBookmarks = localStorage.getItem('bookmarked-articles');
+                    if (cachedBookmarks) {
+                        try {
+                            const bookmarkedArticles = JSON.parse(cachedBookmarks);
+                            if (bookmarkedArticles.includes(articleId)) {
+                                return true;
+                            }
+                        } catch (e) {
+                            console.warn('解析收藏缓存失败:', e);
+                        }
+                    }
+
+                    try {
+                        // 使用客户端的 getCurrentBookmarks 方法
+                        const currentBookmarks = await this.client.getCurrentBookmarks();
+
+                        // 检查是否包含指定文章 (优先检查 a 标签，然后检查 e 标签)
+                        const isBookmarked = currentBookmarks.some(tag =>
+                            (tag[0] === 'a' && tag[1] === articleATag) ||
+                            (tag[0] === 'e' && tag[1] === articleId)
+                        );
+
+                        // 更新本地缓存
+                        if (isBookmarked) {
+                            const bookmarkedArticles = cachedBookmarks ? JSON.parse(cachedBookmarks) : [];
+                            if (!bookmarkedArticles.includes(articleId)) {
+                                bookmarkedArticles.push(articleId);
+                                localStorage.setItem('bookmarked-articles', JSON.stringify(bookmarkedArticles));
+                            }
+                        }
+
+                        return isBookmarked;
+                    } catch (error) {
+                        console.warn('查询收藏状态失败，使用缓存状态:', error);
+                        // 网络请求失败时，使用缓存状态
+                        if (cachedBookmarks) {
+                            try {
+                                const bookmarkedArticles = JSON.parse(cachedBookmarks);
+                                return bookmarkedArticles.includes(articleId);
+                            } catch (e) {
+                                console.warn('解析收藏缓存失败:', e);
+                            }
+                        }
+                        return false;
                     }
                 }
 
@@ -2848,53 +3135,63 @@ npm run dev
                         aTag: aTag
                     });
 
-                    // 首先查询有 A 标签的评论（根评论）
-                    const aTagFilter = {
-                        kinds: [this.client.eventKinds.COMMENT],
-                        '#A': [aTag],
-                        since: since,
-                        limit: limit
-                    };
-
-                    console.log('🔍 查询 A 标签评论过滤器:', aTagFilter);
-
-                    let aTagComments = [];
+                    // 使用独立的 SimplePool 避免状态冲突
+                    const commentPool = new SimplePool();
+                    
                     try {
-                        aTagComments = await this.client.pool.querySync(this.client.relays, aTagFilter, { maxWait: 10000 });
-                    } catch (e) {
-                        console.warn('查询 A 标签评论失败:', e);
+                        // 首先查询有 A 标签的评论（根评论）
+                        const aTagFilter = {
+                            kinds: [this.client.eventKinds.COMMENT],
+                            '#A': [aTag],
+                            since: since,
+                            limit: limit
+                        };
+
+                        console.log('🔍 查询 A 标签评论过滤器:', aTagFilter);
+
+                        let aTagComments = [];
+                        try {
+                            aTagComments = await commentPool.querySync(this.client.relays, aTagFilter, { maxWait: 10000 });
+                        } catch (e) {
+                            console.warn('查询 A 标签评论失败:', e);
+                        }
+
+                        console.log('🔍 A 标签评论结果:', aTagComments);
+
+                        // 然后查询指向这些评论的回复
+                        let replyComments = [];
+                        if (aTagComments.length > 0) {
+                            const replyFilter = {
+                                kinds: [this.client.eventKinds.COMMENT],
+                                '#e': aTagComments.map(c => c.id),
+                                since: since,
+                                limit: limit * 2
+                            };
+
+                            console.log('🔍 查询回复评论过滤器:', replyFilter);
+
+                            try {
+                                replyComments = await commentPool.querySync(this.client.relays, replyFilter, { maxWait: 10000 });
+                            } catch (e) {
+                                console.warn('查询回复评论失败:', e);
+                            }
+
+                            console.log('🔍 回复评论结果:', replyComments);
+                        }
+
+                        // 合并所有评论
+                        const allComments = [...aTagComments, ...replyComments];
+                        console.log('🔍 合并后的所有评论:', allComments);
+
+                        // 去重
+                        const unique = Array.from(new Map(allComments.map(e => [e.id, e])).values());
+                        // 按时间升序
+                        unique.sort((a, b) => a.created_at - b.created_at);
+                        return unique;
+                        
+                    } finally {
+                        commentPool.close(this.client.relays);
                     }
-
-                    console.log('🔍 A 标签评论结果:', aTagComments);
-
-                    // 然后查询指向这些评论的回复
-                    const replyFilter = {
-                        kinds: [this.client.eventKinds.COMMENT],
-                        '#e': aTagComments.map(c => c.id),
-                        since: since,
-                        limit: limit * 2
-                    };
-
-                    console.log('🔍 查询回复评论过滤器:', replyFilter);
-
-                    let replyComments = [];
-                    try {
-                        replyComments = await this.client.pool.querySync(this.client.relays, replyFilter, { maxWait: 10000 });
-                    } catch (e) {
-                        console.warn('查询回复评论失败:', e);
-                    }
-
-                    console.log('🔍 回复评论结果:', replyComments);
-
-                    // 合并所有评论
-                    const allComments = [...aTagComments, ...replyComments];
-                    console.log('🔍 合并后的所有评论:', allComments);
-
-                    // 去重
-                    const unique = Array.from(new Map(allComments.map(e => [e.id, e])).values());
-                    // 按时间升序
-                    unique.sort((a, b) => a.created_at - b.created_at);
-                    return unique;
                 }
 
                 async showArticleViewer(articleId) {
@@ -3303,25 +3600,25 @@ npm run dev
                                         <button class="reply-btn" data-comment-id="${c.id}" data-parent-pubkey="${c.pubkey}">回复</button>
                                         <button class="show-json-btn" data-event-id="${c.id}" style="background: #6c757d; margin-left: 5px; font-size: 12px; padding: 4px 8px;">📋 JSON</button>
                                     </div>
-                                    <div class="reply-box" id="reply-box-${c.id}" style="display:none;">
-                                        <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
-                                        <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
-                                    </div>
-                                    <div id="json-modal-${c.id}" class="json-modal" style="display: none;">
-                                        <div class="json-modal-content">
-                                            <div class="json-modal-header">
-                                                <h3>评论事件完整 JSON</h3>
-                                                <button class="close-json-btn" data-event-id="${c.id}">&times;</button>
-                                            </div>
-                                            <div class="json-modal-body">
-                                                <textarea id="json-content-${c.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(c, null, 2)}</textarea>
-                                            </div>
-                                            <div class="json-modal-footer">
-                                                <button class="copy-json-btn" data-event-id="${c.id}" style="background: #28a745;">复制 JSON</button>
-                                                <button class="close-json-btn" data-event-id="${c.id}" style="background: #6c757d;">关闭</button>
+                                        <div class="reply-box" id="reply-box-${c.id}" style="display:none;">
+                                            <textarea id="reply-input-${c.id}" rows="2" style="width:100%;margin-top:6px;"></textarea>
+                                            <button class="send-reply-btn" data-parent-id="${c.id}" data-parent-pubkey="${c.pubkey}" style="margin-top:4px;">发送</button>
+                                        </div>
+                                        <div id="json-modal-${c.id}" class="json-modal" style="display: none;">
+                                            <div class="json-modal-content">
+                                                <div class="json-modal-header">
+                                                    <h3>评论事件完整 JSON</h3>
+                                                    <button class="close-json-btn" data-event-id="${c.id}">&times;</button>
+                                                </div>
+                                                <div class="json-modal-body">
+                                                    <textarea id="json-content-${c.id}" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; padding: 10px;">${JSON.stringify(c, null, 2)}</textarea>
+                                                </div>
+                                                <div class="json-modal-footer">
+                                                    <button class="copy-json-btn" data-event-id="${c.id}" style="background: #28a745;">复制 JSON</button>
+                                                    <button class="close-json-btn" data-event-id="${c.id}" style="background: #6c757d;">关闭</button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
                                 </div>
                             `;
 
@@ -3449,6 +3746,199 @@ npm run dev
                     // 如果父评论也是回复，继续向上查找
                     console.log('🔄 父评论也是回复，继续向上查找');
                     return this.findRootComment(parent, commentMap, allComments, article);
+                }
+
+                                // 加载并渲染收藏文章
+                async loadFavoritesArticles() {
+                    const favoritesContent = document.getElementById('favorites-content');
+                    favoritesContent.innerHTML = '<div class="loading">正在加载收藏文章...</div>';
+
+                    try {
+                        // 检查用户是否已登录
+                        if (!this.client.publicKey) {
+                            favoritesContent.innerHTML = '<div class="status error">请先登录以查看收藏文章</div>';
+                            return;
+                        }
+
+                        // 1. 查询当前用户的所有收藏事件（BOOKMARK kind）
+                        console.log('🔍 查询用户的收藏事件...');
+                        console.log('👤 当前用户公钥:', this.client.publicKey.substring(0, 16) + '...');
+
+                        // 使用与 getCurrentBookmarks 相同的 limit 参数
+                        const queryParams = {
+                            kinds: [this.client.eventKinds.BOOKMARK],
+                            authors: [this.client.publicKey], // 查询当前用户的收藏
+                            limit: 1  // 改为与 getCurrentBookmarks 相同的 limit
+                        };
+
+                        console.log('📋 详细查询参数:', {
+                            ...queryParams,
+                            relays: this.client.relays,
+                            maxWait: 8000
+                        });
+
+                        // 使用独立的 SimplePool 实例进行收藏查询
+                        console.log('🔍 创建独立的 SimplePool 进行收藏查询...');
+                        const bookmarkPool = new SimplePool();
+
+                        let bookmarkEvents = [];
+                        try {
+                            bookmarkEvents = await bookmarkPool.querySync(this.client.relays, queryParams, { maxWait: 8000 });
+                            console.log('✅ 独立 SimplePool 查询结果:', bookmarkEvents.length, '个');
+
+                            // 查询完成后立即关闭这个独立的 pool
+                            bookmarkPool.close(this.client.relays);
+
+                        } catch (error) {
+                            console.error('独立 SimplePool 查询失败:', error);
+                            bookmarkPool.close(this.client.relays);
+
+                            // 回退到主 pool
+                            console.log('🔄 回退到主 pool...');
+                            bookmarkEvents = await this.client.pool.querySync(this.client.relays, queryParams, { maxWait: 8000 });
+                            console.log('✅ 主 pool 查询结果:', bookmarkEvents.length, '个');
+                        }
+
+                        console.log('✅ 查询到收藏事件:', bookmarkEvents.length, '个');
+
+                        // 显示收藏事件的详细信息
+                        if (bookmarkEvents.length > 0) {
+                            console.log('📋 收藏事件详情:');
+                            bookmarkEvents.forEach((event, index) => {
+                                console.log(`  ${index + 1}. ID: ${event.id.substring(0, 16)}...`);
+                                console.log(`     作者: ${event.pubkey.substring(0, 16)}...`);
+                                console.log(`     类型: ${event.kind}`);
+                                console.log(`     标签:`, event.tags);
+                                console.log(`     内容: ${event.content.substring(0, 100)}...`);
+                            });
+                        }
+
+                        // 2. 从收藏事件中提取所有文章信息（支持 e 标签和 a 标签）
+                        const articleIds = [];
+                        const articleATags = [];
+
+                        bookmarkEvents.forEach(event => {
+                            event.tags.forEach(tag => {
+                                if (tag[0] === 'e') {
+                                    articleIds.push(tag[1]);
+                                } else if (tag[0] === 'a') {
+                                    articleATags.push(tag[1]);
+                                }
+                            });
+                        });
+
+                        // 去重
+                        const uniqueArticleIds = [...new Set(articleIds)];
+                        const uniqueArticleATags = [...new Set(articleATags)];
+
+                        console.log('📋 提取到文章信息:');
+                        console.log('   - e 标签文章ID:', uniqueArticleIds.length, '个');
+                        console.log('   - a 标签文章:', uniqueArticleATags.length, '个');
+
+                        if (uniqueArticleIds.length === 0 && uniqueArticleATags.length === 0) {
+                            favoritesContent.innerHTML = '<div class="status info">收藏事件中没有找到文章</div>';
+                            return;
+                        }
+
+                        // 3. 查询文章内容
+                        console.log('🔍 查询收藏的文章详情...');
+
+                        // 同样使用独立的 SimplePool 查询文章详情
+                        const articlePool = new SimplePool();
+                        let articles = [];
+
+                        try {
+                            // 首先查询 e 标签文章 (通过 ID)
+                            if (uniqueArticleIds.length > 0) {
+                                const idArticles = await articlePool.querySync(this.client.relays, {
+                                    ids: uniqueArticleIds,
+                                    limit: 50
+                                }, { maxWait: 8000 });
+                                articles.push(...idArticles);
+                                console.log('✅ 通过 ID 查询到文章:', idArticles.length, '篇');
+                            }
+
+                            // 然后查询 a 标签文章 (kind 30023)
+                            if (uniqueArticleATags.length > 0) {
+                                // 解析 a 标签获取查询参数
+                                const aTagQueries = uniqueArticleATags.map(aTag => {
+                                    const [kind, pubkey, dTag] = aTag.split(':');
+                                    return {
+                                        kinds: [parseInt(kind)],
+                                        authors: [pubkey],
+                                        '#d': [dTag]
+                                    };
+                                });
+
+                                // 分别查询每个 a 标签
+                                for (const query of aTagQueries) {
+                                    const aTagArticles = await articlePool.querySync(this.client.relays, {
+                                        ...query,
+                                        limit: 10
+                                    }, { maxWait: 8000 });
+                                    articles.push(...aTagArticles);
+                                }
+                                console.log('✅ 通过 a 标签查询到文章:', articles.length - (uniqueArticleIds.length > 0 ? uniqueArticleIds.length : 0), '篇');
+                            }
+
+                            // 查询完成后立即关闭
+                            articlePool.close(this.client.relays);
+
+                        } catch (error) {
+                            console.error('独立 SimplePool 查询文章详情失败:', error);
+                            articlePool.close(this.client.relays);
+
+                            // 如果查询失败，暂时跳过 a 标签查询，只查询 e 标签文章
+                            if (uniqueArticleIds.length > 0) {
+                                console.log('🔄 回退到主 pool 查询 e 标签文章...');
+                                articles = await this.client.pool.querySync(this.client.relays, {
+                                    ids: uniqueArticleIds,
+                                    limit: 50
+                                }, { maxWait: 8000 });
+                                console.log('✅ 主 pool 查询文章详情结果:', articles.length, '篇');
+                            }
+                        }
+
+                        console.log('✅ 查询到收藏文章:', articles.length, '篇');
+
+                        if (!articles.length) {
+                            favoritesContent.innerHTML = '<div class="status info">未找到收藏文章详情</div>';
+                            return;
+                        }
+
+                        // 4. 渲染
+                        let html = '';
+                        articles.sort((a, b) => b.created_at - a.created_at);
+                        articles.forEach(event => {
+                            const timeStr = this.client.formatTime(event.created_at);
+                            const title = this.client.getTagValue(event.tags, 'title') || this.client.getTagValue(event.tags, 'd') || '无标题';
+                            const content = event.content || '';
+
+                            html += `
+                            <div class="article-item" data-article-id="${event.id}">
+                                <div class="article-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <div class="article-title" style="cursor: pointer; color: #667eea; font-weight: 600; flex: 1;" data-article-id="${event.id}">
+                                        📚 ${this.escapeHtml(title)}
+                                    </div>
+                                    <button class="view-detail-btn" data-article-id="${event.id}" style="background: #17a2b8; margin-left: 10px;">
+                                        📖 详情
+                                    </button>
+                                </div>
+                                <div class="article-content">${this.escapeHtml(content.substring(0, 200))}${content.length > 200 ? '...' : ''}</div>
+                                <div class="article-meta">
+                                    作者: ${this.client.truncateKey(event.pubkey)} |
+                                    发布时间: ${timeStr} |
+                                    事件类型: ${event.kind}
+                                </div>
+                            </div>
+                            `;
+                        });
+                        favoritesContent.innerHTML = html;
+
+                    } catch (e) {
+                        console.error('❌ 加载收藏文章失败:', e);
+                        favoritesContent.innerHTML = '<div class="status error">加载失败: ' + e.message + '</div>';
+                    }
                 }
             }
 
