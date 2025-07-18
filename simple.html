@@ -1926,6 +1926,30 @@ npm run dev
                             <div id="article-content"></div>
                         </div>
 
+                        <div id="article-editor" style="display:none">
+                            <button id="back-to-timeline-from-editor" style="margin-bottom: 20px;">← 返回时间线</button>
+                            <div style="margin-bottom: 20px;">
+                                <h3>编辑文章</h3>
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-articleTitle">文章标题:</label>
+                                <input type="text" id="edit-articleTitle" placeholder="请输入文章标题">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-articleDTag">文章标识 (dTag):</label>
+                                <input type="text" id="edit-articleDTag" placeholder="请输入文章标识，留空将自动生成">
+                                <small style="color: #666; font-size: 12px;">dTag 用于唯一标识文章，使用 <code>content_id</code> </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-articleContent">文章内容:</label>
+                                <textarea id="edit-articleContent" placeholder="请输入文章内容" rows="10"></textarea>
+                            </div>
+                            <div style="margin-top: 20px;">
+                                <button id="update-article" style="background: #28a745; margin-right: 10px;">更新文章</button>
+                                <button id="cancel-edit" style="background: #6c757d;">取消编辑</button>
+                            </div>
+                        </div>
+
                         <div id="publish-tab" class="tab-content">
                             <div class="form-group">
                                 <label for="articleTitle">文章标题:</label>
@@ -2171,6 +2195,12 @@ npm run dev
                             const articleId = e.target.dataset.articleId;
                             await this.showArticleViewer(articleId);
                         }
+
+                        // 编辑按钮点击事件
+                        if (e.target.classList.contains('edit-btn') && e.target.dataset.articleId) {
+                            const articleId = e.target.dataset.articleId;
+                            await this.showArticleEditor(articleId);
+                        }
                     });
 
                     // 点击模态框背景关闭
@@ -2209,6 +2239,21 @@ npm run dev
                     // 切换私钥显示
                     document.getElementById('toggle-private-key').addEventListener('click', () => {
                         this.togglePrivateKeyVisibility();
+                    });
+
+                    // 编辑页面返回按钮
+                    document.getElementById('back-to-timeline-from-editor').addEventListener('click', () => {
+                        this.hideArticleEditor();
+                    });
+
+                    // 更新文章按钮
+                    document.getElementById('update-article').addEventListener('click', async () => {
+                        await this.handleUpdateArticle();
+                    });
+
+                    // 取消编辑按钮
+                    document.getElementById('cancel-edit').addEventListener('click', () => {
+                        this.hideArticleEditor();
                     });
                 }
 
@@ -2877,6 +2922,11 @@ npm run dev
                                 <button class="comment-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}">
                                     💬 评论
                                 </button>
+                                ${event.pubkey === this.client.publicKey ? `
+                                    <button class="edit-btn" data-article-id="${event.id}" data-author-pubkey="${event.pubkey}" data-kind="${event.kind}" style="background: #ffc107; color: #000;">
+                                        ✏️ 编辑
+                                    </button>
+                                ` : ''}
                                 <button class="show-json-btn" data-event-id="${event.id}" style="background: #6c757d; margin-left: 5px;">
                                     📋 JSON
                                 </button>
@@ -3648,6 +3698,91 @@ npm run dev
 
                     // 初始加载
                     await loadComments();
+                }
+
+                // 显示文章编辑器
+                async showArticleEditor(articleId) {
+                    // 获取文章对象
+                    const article = this.articles.find(a => a.id === articleId);
+                    if (!article) {
+                        this.showStatus('文章不存在', 'error');
+                        return;
+                    }
+
+                    // 检查权限 - 只有作者可以编辑
+                    if (article.pubkey !== this.client.publicKey) {
+                        this.showStatus('只有作者可以编辑文章', 'error');
+                        return;
+                    }
+
+                    // 保存当前编辑的文章
+                    this.currentEditingArticle = article;
+
+                    // 隐藏其他页面
+                    document.getElementById('timeline-tab').style.display = 'none';
+                    document.getElementById('article-viewer').style.display = 'none';
+
+                    // 填充表单数据
+                    const title = this.client.getTagValue(article.tags, 'title') || '';
+                    const dTag = this.client.getTagValue(article.tags, 'd') || '';
+                    const content = article.content || '';
+
+                    document.getElementById('edit-articleTitle').value = title;
+                    document.getElementById('edit-articleDTag').value = dTag;
+                    document.getElementById('edit-articleContent').value = content;
+
+                    // 显示编辑器
+                    document.getElementById('article-editor').style.display = 'block';
+                }
+
+                // 隐藏文章编辑器
+                hideArticleEditor() {
+                    document.getElementById('article-editor').style.display = 'none';
+                    document.getElementById('timeline-tab').style.display = 'block';
+                    this.currentEditingArticle = null;
+                }
+
+                // 处理文章更新
+                async handleUpdateArticle() {
+                    if (!this.currentEditingArticle) {
+                        this.showStatus('没有正在编辑的文章', 'error');
+                        return;
+                    }
+
+                    const title = document.getElementById('edit-articleTitle').value.trim();
+                    const dTag = document.getElementById('edit-articleDTag').value.trim();
+                    const content = document.getElementById('edit-articleContent').value.trim();
+
+                    if (!title || !content) {
+                        this.showStatus('标题和内容不能为空', 'error');
+                        return;
+                    }
+
+                    try {
+                        this.showStatus('正在更新文章...', 'info');
+
+                        // 使用原文章的 d 标签，如果用户没有修改的话
+                        const finalDTag = dTag || this.client.getTagValue(this.currentEditingArticle.tags, 'd') || '';
+
+                        // 发布新版本的文章（Nostr 协议中更新实际上是发布新的版本）
+                        const result = await this.client.publishArticle(title, content, '', finalDTag);
+
+                        this.showStatus('文章更新成功！', 'success');
+
+                        // 清空表单
+                        document.getElementById('edit-articleTitle').value = '';
+                        document.getElementById('edit-articleDTag').value = '';
+                        document.getElementById('edit-articleContent').value = '';
+
+                        // 隐藏编辑器
+                        this.hideArticleEditor();
+
+                        // 刷新时间线
+                        await this.updateTimeline();
+
+                    } catch (error) {
+                        this.showStatus('更新文章失败: ' + error.message, 'error');
+                    }
                 }
 
                 async loadCommentsForArticle(article) {
