@@ -517,6 +517,11 @@ npm run dev
             // 真实的 Nostr 客户端实现
             class RealNostrClient {
                 constructor() {
+                    // NIP-42 认证状态跟踪
+                    this.authChallenges = new Map(); // relay -> challenge
+                    this.authStatus = new Map(); // relay -> authenticated status
+                    this.pendingAuthRequests = new Map(); // relay -> promise resolve
+                    
                     // 默认中继列表
                     this.defaultRelays = [
                         'wss://nostr.internal.ikandev.xyz',
@@ -687,7 +692,7 @@ npm run dev
                     return signedEvent;
                 }
 
-                // 发布事件 - 使用独立的 SimplePool 避免超时
+                // 发布事件 - 支持 NIP-42 认证
                 async publishEvent(event) {
                     if (!event.id || !event.sig) {
                         throw new Error('事件未正确签名');
@@ -699,25 +704,107 @@ npm run dev
                         relays: this.relays.length
                     });
 
-                    // 使用独立的 SimplePool 进行发布，避免与查询冲突
-                    const publishPool = new SimplePool();
+                    // 为每个中继单独处理发布（支持认证）
+                    const results = await Promise.allSettled(
+                        this.relays.map(relayUrl => this.publishToRelayWithAuth(relayUrl, event))
+                    );
 
-                    try {
-                        console.log(`正在发布到 ${this.relays.length} 个中继...`);
+                    const successful = results.filter(r => r.status === 'fulfilled').length;
+                    const failed = results.filter(r => r.status === 'rejected').length;
 
-                        const publishPromises = publishPool.publish(this.relays, event);
-                        await Promise.all(publishPromises);
+                    console.log(`✅ 发布完成: ${successful} 成功, ${failed} 失败`);
 
-                        console.log(`✅ 成功发布到中继`);
-                        return { event, success: true, relayCount: this.relays.length };
-
-                    } catch (error) {
-                        console.error(`❌ 发布失败:`, error.message);
-                        return { event, success: false, error: error.message };
-                    } finally {
-                        // 发布完成后关闭独立的 pool
-                        publishPool.close(this.relays);
+                    if (successful === 0) {
+                        const errors = results.filter(r => r.status === 'rejected').map(r => r.reason.message);
+                        throw new Error(`所有中继发布失败: ${errors.join(', ')}`);
                     }
+
+                    return { event, success: true, successful, failed, total: results.length };
+                }
+
+                // 支持认证的发布到单个中继
+                async publishToRelayWithAuth(relayUrl, event) {
+                    return new Promise((resolve, reject) => {
+                        const ws = new WebSocket(relayUrl);
+                        const timeout = setTimeout(() => {
+                            ws.close();
+                            reject(new Error(`发布到 ${relayUrl} 超时`));
+                        }, 15000);
+
+                        ws.onopen = () => {
+                            console.log(`📤 连接到 ${relayUrl}，发布事件`);
+                            // 直接发送事件
+                            ws.send(JSON.stringify(['EVENT', event]));
+                        };
+
+                        ws.onmessage = async (msgEvent) => {
+                            try {
+                                const data = JSON.parse(msgEvent.data);
+                                console.log(`📥 ${relayUrl} 响应:`, data);
+
+                                // 处理 AUTH 消息
+                                if (data[0] === 'AUTH') {
+                                    const challenge = data[1];
+                                                    console.log(`🔐 收到 ${relayUrl} 的认证挑战: ${challenge.substring(0, 16)}...`);
+                                        
+                                        // 显示认证状态到用户界面
+                                        if (window.app && typeof window.app.showStatus === 'function') {
+                                            window.app.showStatus(`🔐 正在认证 ${relayUrl}...`, 'info');
+                                        }
+                                    
+                                    try {
+                                        const authEvent = await this.handleAuthChallenge(relayUrl, challenge);
+                                        ws.send(JSON.stringify(['AUTH', authEvent]));
+                                        console.log(`🔐 已发送认证响应到 ${relayUrl}`);
+                                        
+                                        // 显示认证成功
+                                        if (window.app && typeof window.app.showStatus === 'function') {
+                                            window.app.showStatus(`🔐 ${relayUrl} 认证成功！`, 'success');
+                                        }
+                                        // 认证后重新发送原事件
+                                        ws.send(JSON.stringify(['EVENT', event]));
+                                    } catch (authError) {
+                                        console.error(`🔐 认证失败 ${relayUrl}:`, authError);
+                                        clearTimeout(timeout);
+                                        ws.close();
+                                        reject(authError);
+                                    }
+                                }
+                                
+                                // 处理 OK 消息 (发布结果)
+                                else if (data[0] === 'OK') {
+                                    const [, eventId, success, message] = data;
+                                    clearTimeout(timeout);
+                                    ws.close();
+                                    
+                                    if (success) {
+                                        console.log(`✅ ${relayUrl} 发布成功`);
+                                        this.setAuthStatus(relayUrl, true);
+                                        resolve({ relayUrl, success: true });
+                                    } else {
+                                        console.warn(`❌ ${relayUrl} 发布失败: ${message}`);
+                                        if (message && message.toLowerCase().includes('auth')) {
+                                            this.setAuthStatus(relayUrl, false);
+                                        }
+                                        reject(new Error(`发布失败: ${message}`));
+                                    }
+                                }
+                                
+                            } catch (error) {
+                                console.error(`解析 ${relayUrl} 消息失败:`, error);
+                            }
+                        };
+
+                        ws.onerror = (error) => {
+                            console.error(`${relayUrl} WebSocket 错误:`, error);
+                            clearTimeout(timeout);
+                            reject(new Error(`WebSocket 连接错误: ${relayUrl}`));
+                        };
+
+                        ws.onclose = () => {
+                            clearTimeout(timeout);
+                        };
+                    });
                 }
 
                 // 发布用户元数据
@@ -1129,6 +1216,7 @@ npm run dev
                 async getTimeline(limit = 20, timelineType = 'global') {
                     try {
                         console.log(`开始从 ${this.relays.length} 个中继获取时间线数据...`);
+                        console.log('🔍 当前认证状态:', Array.from(this.authStatus.entries()));
 
                         // 根据时间线类型动态调整查询的 kind
                         let kinds = [];
@@ -1730,6 +1818,88 @@ npm run dev
                     this.pool.close(this.relays);
                 }
 
+                // NIP-42 认证相关方法
+                
+                // 创建认证事件 (kind 22242)
+                async createAuthEvent(challenge, relayUrl) {
+                    if (!this.privateKey || !this.publicKey) {
+                        throw new Error('需要先设置用户密钥对');
+                    }
+
+                    const tags = [
+                        ['relay', relayUrl],
+                        ['challenge', challenge]
+                    ];
+
+                    const authEvent = {
+                        kind: 22242,
+                        created_at: Math.floor(Date.now() / 1000),
+                        tags,
+                        content: '',
+                        pubkey: this.publicKey
+                    };
+
+                    // 使用 nostr-tools 签名
+                    const signedEvent = finalizeEvent(authEvent, this.privateKey);
+                    return signedEvent;
+                }
+
+                // 处理 AUTH 消息
+                async handleAuthChallenge(relayUrl, challenge) {
+                    try {
+                        console.log(`🔐 收到认证挑战 from ${relayUrl}: ${challenge}`);
+                        this.addAuthLog(`📨 收到 ${relayUrl} 认证挑战`);
+                        
+                        // 存储挑战
+                        this.authChallenges.set(relayUrl, challenge);
+
+                        // 创建认证事件
+                        const authEvent = await this.createAuthEvent(challenge, relayUrl);
+                        console.log(`🔐 创建认证事件:`, authEvent);
+                        this.addAuthLog(`🔧 创建认证事件 (kind: ${authEvent.kind})`);
+
+                        return authEvent;
+                    } catch (error) {
+                        console.error(`🔐 处理认证挑战失败:`, error);
+                        this.addAuthLog(`❌ ${relayUrl} 认证挑战处理失败: ${error.message}`);
+                        throw error;
+                    }
+                }
+
+                // 检查中继是否已认证
+                isAuthenticated(relayUrl) {
+                    return this.authStatus.get(relayUrl) === true;
+                }
+
+                // 设置中继认证状态
+                setAuthStatus(relayUrl, status) {
+                    this.authStatus.set(relayUrl, status);
+                    console.log(`🔐 ${relayUrl} 认证状态: ${status ? '已认证' : '未认证'}`);
+                    
+                    // 添加到认证日志
+                    this.addAuthLog(`${relayUrl} - ${status ? '✅ 认证成功' : '❌ 认证失败'}`);
+                }
+
+                // 添加认证日志条目
+                addAuthLog(message) {
+                    const authLog = document.getElementById('auth-log');
+                    if (authLog) {
+                        const time = new Date().toLocaleTimeString();
+                        const logEntry = document.createElement('div');
+                        logEntry.innerHTML = `<span style="color: #6c757d;">[${time}]</span> ${message}`;
+                        logEntry.style.marginBottom = '2px';
+                        
+                        // 如果是第一个日志，清空默认提示
+                        if (authLog.innerHTML.includes('认证事件将在此处显示')) {
+                            authLog.innerHTML = '';
+                        }
+                        
+                        authLog.appendChild(logEntry);
+                        // 滚动到底部
+                        authLog.scrollTop = authLog.scrollHeight;
+                    }
+                }
+
                 // 中继管理方法
                 loadRelaysFromStorage() {
                     try {
@@ -1895,6 +2065,8 @@ npm run dev
                     <button id="testRawWebSocket" class="dev-button" style="background: #fd7e14; margin-left: 10px;">原生WebSocket测试</button>
                     <button id="testTimelineLogic" class="dev-button" style="background: #20c997; margin-left: 10px;">测试时间线逻辑</button>
                     <button id="customComment" class="dev-button" style="background: #e83e8c; margin-left: 10px;">自定义评论</button>
+                    <button id="testAuth" class="dev-button" style="background: #9b59b6; margin-left: 10px;">🔐 测试认证</button>
+                    <button id="testAuthReq" class="dev-button" style="background: #8e44ad; margin-left: 10px;">🔍 检测认证需求</button>
                     <button id="toggleDevMode" style="background: #6c757d; margin-left: 10px;">🔧 开发者模式</button>
                                     </div>
                             </div>
@@ -2084,6 +2256,14 @@ npm run dev
                             <div id="relay-list">
                                 <h3>中继列表</h3>
                                 <div id="relay-items"></div>
+                            </div>
+
+                            <div style="margin-top: 20px;">
+                                <h4>🔐 认证日志</h4>
+                                <div id="auth-log" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px;">
+                                    <div style="color: #6c757d;">认证事件将在此处显示...</div>
+                                </div>
+                                <button id="clearAuthLog" style="margin-top: 10px; background: #6c757d; font-size: 12px;">清空日志</button>
                             </div>
                         </div>
                     </div>
@@ -2328,6 +2508,19 @@ npm run dev
                     // 取消自定义评论按钮
                     document.getElementById('cancel-custom-comment').addEventListener('click', () => {
                         this.hideCustomCommentPage();
+                    });
+
+                    // 测试认证按钮
+                    document.getElementById('testAuth').addEventListener('click', async () => {
+                        await this.handleTestAuth();
+                    });
+
+                    // 清空认证日志按钮
+                    document.getElementById('clearAuthLog').addEventListener('click', () => {
+                        const authLog = document.getElementById('auth-log');
+                        if (authLog) {
+                            authLog.innerHTML = '<div style="color: #6c757d;">认证事件将在此处显示...</div>';
+                        }
                     });
                 }
 
@@ -3222,11 +3415,18 @@ npm run dev
                             console.log(`- normalizedRelay: ${normalizedRelay} -> statusMap.get(): ${connected}`);
                         }
                         const statusText = connected ? '已连接' : '待连接';
-                        const statusColor = connected ? '#28745' : '#dc3545';
+                        const statusColor = connected ? '#28a745' : '#dc3545';
+                        
+                        // 检查认证状态
+                        const isAuthenticated = this.client.isAuthenticated(relay);
+                        const authText = isAuthenticated ? '🔐 已认证' : '';
+                        const authColor = isAuthenticated ? '#007bff' : '#6c757d';
+                        
                         html += `<div style="display: flex; align-items: center; margin-bottom: 8px;">
                             <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: ${statusColor};"></span>
-                            <span style="flex: 1; font-family: monospace;">${relay}</span>
+                            <span style="flex: 1; font-family: monospace; font-size: 14px;">${relay}</span>
                             <span style="margin-left: 10px; color: ${statusColor}; font-size: 13px;">${statusText}</span>
+                            <span style="margin-left: 8px; color: ${authColor}; font-size: 12px;">${authText}</span>
                             <button class="remove-relay-btn" data-relay="${relay}" style="margin-left: 10px;">移除</button>
                         </div>`;
                     }
@@ -3938,6 +4138,40 @@ npm run dev
                     } catch (error) {
                         console.error('🔧 自定义评论创建失败:', error);
                         this.showStatus('创建自定义评论失败: ' + error.message, 'error');
+                    }
+                }
+
+                // 测试 NIP-42 认证功能
+                async handleTestAuth() {
+                    if (!this.client.privateKey) {
+                        this.showStatus('请先创建或导入账号', 'error');
+                        return;
+                    }
+
+                    this.showStatus('正在测试 NIP-42 认证功能...', 'info');
+
+                    try {
+                        // 创建一个简单的测试事件
+                        const testEvent = await this.client.createEvent(1, '🔐 测试 NIP-42 认证 - ' + new Date().toLocaleString());
+
+                        console.log('🔐 测试事件创建成功:', testEvent);
+
+                        // 尝试发布到所有中继（这会触发认证流程）
+                        const result = await this.client.publishEvent(testEvent);
+
+                        console.log('🔐 认证测试完成:', result);
+
+                        this.showStatus(`认证测试完成！成功: ${result.successful}, 失败: ${result.failed}`, 'success');
+
+                        // 更新中继列表以显示认证状态
+                        this.updateRelayList();
+
+                        // 刷新时间线查看测试消息
+                        await this.updateTimeline();
+
+                    } catch (error) {
+                        console.error('🔐 认证测试失败:', error);
+                        this.showStatus('认证测试失败: ' + error.message, 'error');
                     }
                 }
 
