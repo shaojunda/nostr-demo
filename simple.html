@@ -521,7 +521,7 @@ npm run dev
                     this.authChallenges = new Map(); // relay -> challenge
                     this.authStatus = new Map(); // relay -> authenticated status
                     this.pendingAuthRequests = new Map(); // relay -> promise resolve
-                    
+
                     // 默认中继列表
                     this.defaultRelays = [
                         'wss://nostr.internal.ikandev.xyz',
@@ -745,18 +745,18 @@ npm run dev
                                 // 处理 AUTH 消息
                                 if (data[0] === 'AUTH') {
                                     const challenge = data[1];
-                                                    console.log(`🔐 收到 ${relayUrl} 的认证挑战: ${challenge.substring(0, 16)}...`);
-                                        
-                                        // 显示认证状态到用户界面
-                                        if (window.app && typeof window.app.showStatus === 'function') {
-                                            window.app.showStatus(`🔐 正在认证 ${relayUrl}...`, 'info');
-                                        }
-                                    
+                                    console.log(`🔐 收到 ${relayUrl} 的认证挑战: ${challenge.substring(0, 16)}...`);
+
+                                    // 显示认证状态到用户界面
+                                    if (window.app && typeof window.app.showStatus === 'function') {
+                                        window.app.showStatus(`🔐 正在认证 ${relayUrl}...`, 'info');
+                                    }
+
                                     try {
                                         const authEvent = await this.handleAuthChallenge(relayUrl, challenge);
                                         ws.send(JSON.stringify(['AUTH', authEvent]));
                                         console.log(`🔐 已发送认证响应到 ${relayUrl}`);
-                                        
+
                                         // 显示认证成功
                                         if (window.app && typeof window.app.showStatus === 'function') {
                                             window.app.showStatus(`🔐 ${relayUrl} 认证成功！`, 'success');
@@ -770,13 +770,13 @@ npm run dev
                                         reject(authError);
                                     }
                                 }
-                                
+
                                 // 处理 OK 消息 (发布结果)
                                 else if (data[0] === 'OK') {
                                     const [, eventId, success, message] = data;
                                     clearTimeout(timeout);
                                     ws.close();
-                                    
+
                                     if (success) {
                                         console.log(`✅ ${relayUrl} 发布成功`);
                                         this.setAuthStatus(relayUrl, true);
@@ -789,7 +789,7 @@ npm run dev
                                         reject(new Error(`发布失败: ${message}`));
                                     }
                                 }
-                                
+
                             } catch (error) {
                                 console.error(`解析 ${relayUrl} 消息失败:`, error);
                             }
@@ -797,6 +797,80 @@ npm run dev
 
                         ws.onerror = (error) => {
                             console.error(`${relayUrl} WebSocket 错误:`, error);
+                            clearTimeout(timeout);
+                            reject(new Error(`WebSocket 连接错误: ${relayUrl}`));
+                        };
+
+                        ws.onclose = () => {
+                            clearTimeout(timeout);
+                        };
+                    });
+                }
+
+                // 支持不认证的发布到单个中继（用于测试）
+                async publishToRelayWithoutAuth(relayUrl, event) {
+                    return new Promise((resolve, reject) => {
+                        const ws = new WebSocket(relayUrl);
+                        const timeout = setTimeout(() => {
+                            ws.close();
+                            reject(new Error(`发布到 ${relayUrl} 超时`));
+                        }, 15000);
+
+                        ws.onopen = () => {
+                            console.log(`📤 连接到 ${relayUrl}，发布事件（不认证模式）`);
+                            this.addAuthLog(`📤 ${relayUrl} - 发送事件（跳过认证）`);
+                            // 直接发送事件
+                            ws.send(JSON.stringify(['EVENT', event]));
+                        };
+
+                        ws.onmessage = async (msgEvent) => {
+                            try {
+                                const data = JSON.parse(msgEvent.data);
+                                console.log(`📥 ${relayUrl} 响应 (不认证模式):`, data);
+
+                                // 忽略 AUTH 消息，不进行认证
+                                if (data[0] === 'AUTH') {
+                                    const challenge = data[1];
+                                    console.log(`🚫 收到 ${relayUrl} 的认证挑战，但故意忽略: ${challenge.substring(0, 16)}...`);
+                                    this.addAuthLog(`🚫 ${relayUrl} - 收到认证挑战但故意忽略`);
+                                    // 不响应认证，看看会发生什么
+                                }
+
+                                // 处理 OK 消息 (发布结果)
+                                else if (data[0] === 'OK') {
+                                    const [, eventId, success, message] = data;
+                                    clearTimeout(timeout);
+                                    ws.close();
+
+                                    if (success) {
+                                        console.log(`✅ ${relayUrl} 发布成功（无认证）`);
+                                        this.addAuthLog(`✅ ${relayUrl} - 无认证发布成功！`);
+                                        resolve({ relayUrl, success: true });
+                                    } else {
+                                        console.warn(`❌ ${relayUrl} 发布失败（无认证）: ${message}`);
+                                        this.addAuthLog(`❌ ${relayUrl} - 无认证发布失败: ${message}`);
+                                        reject(new Error(`无认证发布失败: ${message}`));
+                                    }
+                                }
+
+                                // 处理 CLOSED 消息
+                                else if (data[0] === 'CLOSED') {
+                                    const [, subscriptionId, reason] = data;
+                                    console.warn(`🔒 ${relayUrl} 连接被关闭: ${reason}`);
+                                    this.addAuthLog(`🔒 ${relayUrl} - 连接关闭: ${reason}`);
+                                    clearTimeout(timeout);
+                                    ws.close();
+                                    reject(new Error(`连接被关闭: ${reason}`));
+                                }
+
+                            } catch (error) {
+                                console.error(`解析 ${relayUrl} 消息失败:`, error);
+                            }
+                        };
+
+                        ws.onerror = (error) => {
+                            console.error(`${relayUrl} WebSocket 错误 (不认证模式):`, error);
+                            this.addAuthLog(`❌ ${relayUrl} - WebSocket 连接错误`);
                             clearTimeout(timeout);
                             reject(new Error(`WebSocket 连接错误: ${relayUrl}`));
                         };
@@ -1819,7 +1893,7 @@ npm run dev
                 }
 
                 // NIP-42 认证相关方法
-                
+
                 // 创建认证事件 (kind 22242)
                 async createAuthEvent(challenge, relayUrl) {
                     if (!this.privateKey || !this.publicKey) {
@@ -1849,7 +1923,7 @@ npm run dev
                     try {
                         console.log(`🔐 收到认证挑战 from ${relayUrl}: ${challenge}`);
                         this.addAuthLog(`📨 收到 ${relayUrl} 认证挑战`);
-                        
+
                         // 存储挑战
                         this.authChallenges.set(relayUrl, challenge);
 
@@ -1875,7 +1949,7 @@ npm run dev
                 setAuthStatus(relayUrl, status) {
                     this.authStatus.set(relayUrl, status);
                     console.log(`🔐 ${relayUrl} 认证状态: ${status ? '已认证' : '未认证'}`);
-                    
+
                     // 添加到认证日志
                     this.addAuthLog(`${relayUrl} - ${status ? '✅ 认证成功' : '❌ 认证失败'}`);
                 }
@@ -1888,12 +1962,12 @@ npm run dev
                         const logEntry = document.createElement('div');
                         logEntry.innerHTML = `<span style="color: #6c757d;">[${time}]</span> ${message}`;
                         logEntry.style.marginBottom = '2px';
-                        
+
                         // 如果是第一个日志，清空默认提示
                         if (authLog.innerHTML.includes('认证事件将在此处显示')) {
                             authLog.innerHTML = '';
                         }
-                        
+
                         authLog.appendChild(logEntry);
                         // 滚动到底部
                         authLog.scrollTop = authLog.scrollHeight;
@@ -2066,7 +2140,7 @@ npm run dev
                     <button id="testTimelineLogic" class="dev-button" style="background: #20c997; margin-left: 10px;">测试时间线逻辑</button>
                     <button id="customComment" class="dev-button" style="background: #e83e8c; margin-left: 10px;">自定义评论</button>
                     <button id="testAuth" class="dev-button" style="background: #9b59b6; margin-left: 10px;">🔐 测试认证</button>
-                    <button id="testAuthReq" class="dev-button" style="background: #8e44ad; margin-left: 10px;">🔍 检测认证需求</button>
+                    <button id="testNoAuth" class="dev-button" style="background: #e74c3c; margin-left: 10px;">🚫 测试不认证</button>
                     <button id="toggleDevMode" style="background: #6c757d; margin-left: 10px;">🔧 开发者模式</button>
                                     </div>
                             </div>
@@ -2513,6 +2587,11 @@ npm run dev
                     // 测试认证按钮
                     document.getElementById('testAuth').addEventListener('click', async () => {
                         await this.handleTestAuth();
+                    });
+
+                    // 测试不认证按钮
+                    document.getElementById('testNoAuth').addEventListener('click', async () => {
+                        await this.handleTestNoAuth();
                     });
 
                     // 清空认证日志按钮
@@ -3331,7 +3410,7 @@ npm run dev
                     }
                 }
 
-                                // 检查收藏状态 (支持 a 标签格式)
+                // 检查收藏状态 (支持 a 标签格式)
                 async checkBookmarkStatus(articleId, authorPubkey, dTag) {
                     // 构造文章的 a 标签
                     const articleATag = `30023:${authorPubkey}:${dTag}`;
@@ -3416,12 +3495,12 @@ npm run dev
                         }
                         const statusText = connected ? '已连接' : '待连接';
                         const statusColor = connected ? '#28a745' : '#dc3545';
-                        
+
                         // 检查认证状态
                         const isAuthenticated = this.client.isAuthenticated(relay);
                         const authText = isAuthenticated ? '🔐 已认证' : '';
                         const authColor = isAuthenticated ? '#007bff' : '#6c757d';
-                        
+
                         html += `<div style="display: flex; align-items: center; margin-bottom: 8px;">
                             <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: ${statusColor};"></span>
                             <span style="flex: 1; font-family: monospace; font-size: 14px;">${relay}</span>
@@ -4175,6 +4254,60 @@ npm run dev
                     }
                 }
 
+                // 测试不认证发布功能
+                async handleTestNoAuth() {
+                    if (!this.client.privateKey) {
+                        this.showStatus('请先创建或导入账号', 'error');
+                        return;
+                    }
+
+                    this.showStatus('正在测试不认证发布功能...', 'info');
+
+                    try {
+                        // 创建一个简单的测试事件
+                        const testEvent = await this.client.createEvent(1, '🚫 测试不认证发布 - ' + new Date().toLocaleString());
+
+                        console.log('🚫 测试事件创建成功:', testEvent);
+                        this.client.addAuthLog('🚫 开始测试不认证发布...');
+
+                        // 使用不认证的方式发布到所有中继
+                        const results = await Promise.allSettled(
+                            this.client.relays.map(relayUrl =>
+                                this.client.publishToRelayWithoutAuth(relayUrl, testEvent)
+                            )
+                        );
+
+                        const successful = results.filter(r => r.status === 'fulfilled').length;
+                        const failed = results.filter(r => r.status === 'rejected').length;
+
+                        console.log('🚫 不认证发布测试完成:', { successful, failed, total: results.length });
+
+                        // 显示详细结果
+                        const failureReasons = results
+                            .filter(r => r.status === 'rejected')
+                            .map(r => r.reason.message)
+                            .join(', ');
+
+                        if (failed > 0) {
+                            this.showStatus(`不认证测试完成！成功: ${successful}, 失败: ${failed}。失败原因: ${failureReasons}`, 'warning');
+                        } else {
+                            this.showStatus(`不认证测试完成！所有中继都允许不认证发布 (${successful}/${results.length})`, 'success');
+                        }
+
+                        // 更新中继列表
+                        this.updateRelayList();
+
+                        // 如果有成功的，刷新时间线查看测试消息
+                        if (successful > 0) {
+                            await this.updateTimeline();
+                        }
+
+                    } catch (error) {
+                        console.error('🚫 不认证测试失败:', error);
+                        this.showStatus('不认证测试失败: ' + error.message, 'error');
+                    }
+                }
+
                 async loadCommentsForArticle(article) {
                     // 计算 since 时间戳，用于分页
                     // 第一次加载时 since = 0，后续加载时使用最新评论的时间戳
@@ -4461,7 +4594,7 @@ npm run dev
                     return this.findRootComment(parent, commentMap, allComments, article);
                 }
 
-                                // 加载并渲染收藏文章
+                // 加载并渲染收藏文章
                 async loadFavoritesArticles() {
                     const favoritesContent = document.getElementById('favorites-content');
                     favoritesContent.innerHTML = '<div class="loading">正在加载收藏文章...</div>';
@@ -4759,14 +4892,14 @@ npm run dev
                                         <div style="font-weight: 600; font-size: 16px; color: #333; margin-bottom: 5px;">
                                             ${this.escapeHtml(profile.name)}
                                             ${profile.display_name && profile.display_name !== profile.name ?
-                                                `<span style="color: #666; font-weight: normal; font-size: 14px;">(@${this.escapeHtml(profile.display_name)})</span>` : ''}
+                                    `<span style="color: #666; font-weight: normal; font-size: 14px;">(@${this.escapeHtml(profile.display_name)})</span>` : ''}
                                         </div>
 
                                         ${profile.about ?
-                                            `<div style="color: #666; font-size: 14px; margin-bottom: 8px;">${this.escapeHtml(profile.about)}</div>` : ''}
+                                    `<div style="color: #666; font-size: 14px; margin-bottom: 8px;">${this.escapeHtml(profile.about)}</div>` : ''}
 
                                         ${profile.nip05 ?
-                                            `<div style="color: #667eea; font-size: 13px; margin-bottom: 8px;">✓ ${this.escapeHtml(profile.nip05)}</div>` : ''}
+                                    `<div style="color: #667eea; font-size: 13px; margin-bottom: 8px;">✓ ${this.escapeHtml(profile.nip05)}</div>` : ''}
 
                                         <div style="color: #999; font-size: 12px;">
                                             公钥: ${this.client.truncateKey(profile.pubkey)}
