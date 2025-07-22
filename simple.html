@@ -1134,7 +1134,7 @@ npm run dev
                         let kinds = [];
                         if (timelineType === 'global') {
                             // 全局时间线：显示所有内容（文章和评论）
-                            kinds = [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM];
+                            kinds = [this.eventKinds.TEXT_NOTE, this.eventKinds.LONG_FORM, this.eventKinds.COMMENT];
                         } else {
                             // 其他时间线：只显示文章
                             kinds = [this.eventKinds.LONG_FORM];
@@ -1978,19 +1978,14 @@ npm run dev
                                     <small style="color: #666; font-size: 12px;">回复的事件 ID</small>
                                 </div>
                                 <div class="form-group">
-                                    <label for="comment-P-tag">P tag (Kind):</label>
-                                    <input type="text" id="comment-P-tag" placeholder="30023" value="30023">
-                                    <small style="color: #666; font-size: 12px;">被引用事件的 kind</small>
+                                    <label for="comment-P-tag">P tag (自定义):</label>
+                                    <input type="text" id="comment-P-tag" placeholder="留空或自定义值">
+                                    <small style="color: #666; font-size: 12px;">自定义 P 标签内容</small>
                                 </div>
                                 <div class="form-group">
                                     <label for="comment-E-tag">E tag (事件地址):</label>
                                     <input type="text" id="comment-E-tag" placeholder="事件地址">
                                     <small style="color: #666; font-size: 12px;">替代事件地址</small>
-                                </div>
-                                <div class="form-group">
-                                    <label for="comment-k-tag">k tag (评论 kind):</label>
-                                    <input type="text" id="comment-k-tag" placeholder="1111" value="1111" readonly>
-                                    <small style="color: #666; font-size: 12px;">评论事件类型</small>
                                 </div>
                             </div>
                             <div style="margin-top: 20px;">
@@ -2001,8 +1996,9 @@ npm run dev
                                 <h4 style="margin: 0 0 10px 0; color: #856404;">测试说明:</h4>
                                 <ul style="margin: 0; color: #856404; font-size: 14px;">
                                     <li>A tag: 测试引用不存在的长文章会如何</li>
-                                    <li>P + k 组合: 测试 relay 对标签验证的严格程度</li>
+                                    <li>P tag: 测试自定义 P 标签的处理</li>
                                     <li>e tag: 测试回复不存在事件的处理</li>
+                                    <li>k/K 标签: 自动添加默认值 (k=1111, K=30023)</li>
                                     <li>留空某些字段测试 relay 的容错性</li>
                                 </ul>
                             </div>
@@ -3884,7 +3880,7 @@ npm run dev
                     document.getElementById('comment-a-tag').value = '';
                     document.getElementById('comment-p-tag').value = '';
                     document.getElementById('comment-e-tag').value = '';
-                    document.getElementById('comment-P-tag').value = '30023';
+                    document.getElementById('comment-P-tag').value = '';
                     document.getElementById('comment-E-tag').value = '';
                 }
 
@@ -3906,17 +3902,18 @@ npm run dev
                         const eTag = document.getElementById('comment-e-tag').value.trim();
                         const PTag = document.getElementById('comment-P-tag').value.trim();
                         const ETag = document.getElementById('comment-E-tag').value.trim();
-                        const kTag = document.getElementById('comment-k-tag').value.trim();
-
                         // 构建标签数组
                         const tags = [];
 
-                        if (aTag) tags.push(['a', aTag]);
+                        if (aTag) tags.push(['A', aTag]);
                         if (pTag) tags.push(['p', pTag]);
                         if (eTag) tags.push(['e', eTag]);
                         if (PTag) tags.push(['P', PTag]);
                         if (ETag) tags.push(['E', ETag]);
-                        if (kTag) tags.push(['k', kTag]);
+
+                        // 默认添加 k 和 K 标签
+                        tags.push(['k', '1111']);  // 评论事件类型
+                        tags.push(['K', '30023']); // 被引用事件的 kind
 
                         console.log('🔧 创建自定义评论，标签:', tags);
 
